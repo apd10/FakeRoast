@@ -97,6 +97,10 @@ class FakeRoastConv2d(nn.Module):
         self.dilation = dilation
         self.groups = groups
         self.is_bias = bias
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+
         W_shape = (out_channels, int(in_channels/groups), kernel_size[0], kernel_size[1])
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression)
         
@@ -104,7 +108,7 @@ class FakeRoastConv2d(nn.Module):
         self.scale = sqrt(k) / self.WHelper.init_scale
         self.bias = None
         if self.is_bias :
-            self.bias = nn.paramter(torch.zeros(out_channels))
+            self.bias = nn.Parameter(torch.zeros(out_channels))
 
     def forward(self, x):
         W = self.WHelper() * self.scale
@@ -114,12 +118,14 @@ class FakeRoastConv2d(nn.Module):
 
 class FakeRoastEmbedding(nn.Module):
       def __init__(self, num_embeddings, embedding_dim,
-                    is_global, weeight=None, init_scale=None, compression=None,
+                    is_global, weight=None, init_scale=None, compression=None,
                     padding_idx=None, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False):
           super(FakeRoastEmbedding, self).__init__()
           W_shape = (num_embeddings, embedding_dim)
-          self.WHelper = FakeRoast(W_shape, is_global, weeight, init_scale, compression)
-          
+          self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression)
+ 
+          self.num_embeddings = num_embeddings
+          self.embedding_dim = embedding_dim         
           self.scale = sqrt(1. / num_embeddings) / self.WHelper.init_scale
           self.padding_idx = padding_idx
           self.max_norm = max_norm
