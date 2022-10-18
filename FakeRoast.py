@@ -18,7 +18,10 @@ class FakeRoast(nn.Module):
             assert(compression is not None)
             self.wsize = int(np.prod(W_shape) * compression)
             self.weight = nn.Parameter(torch.zeros(self.wsize, dtype=torch.float), requires_grad=True)
-            self.init_scale = 0.0001
+            if init_scale is not None:
+                self.init_scale = init_scale 
+            else:
+                self.init_scale = 1/sqrt(W_shape[1])
             nn.init.uniform_(self.weight.data, a=-self.init_scale, b = self.init_scale)
         self.W_shape = W_shape
         self.IDX = nn.Parameter(torch.randint(0, self.wsize, size=W_shape, dtype=torch.int64), requires_grad=False)
@@ -59,6 +62,8 @@ class FakeRoastLinear(nn.Module):
         self.idim = input
         self.odim = output
 
+        if is_global == False:
+            init_scale = 1/sqrt(self.idim) 
         self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression)
         self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
         self.bias = None
@@ -102,9 +107,12 @@ class FakeRoastConv2d(nn.Module):
         self.kernel_size = kernel_size
 
         W_shape = (out_channels, int(in_channels/groups), kernel_size[0], kernel_size[1])
+
+        k = 1.0 * groups / (in_channels * np.prod(kernel_size))
+        if is_global == False:
+            init_scale = sqrt(k) 
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression)
         
-        k = 1.0 * groups / (in_channels * np.prod(kernel_size))
         self.scale = sqrt(k) / self.WHelper.init_scale
         self.bias = None
         if self.is_bias :
@@ -122,6 +130,8 @@ class FakeRoastEmbedding(nn.Module):
                     padding_idx=None, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False):
           super(FakeRoastEmbedding, self).__init__()
           W_shape = (num_embeddings, embedding_dim)
+          if is_global == False:
+              init_scale = sqrt(1. / num_embeddings)
           self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression)
  
           self.num_embeddings = num_embeddings
