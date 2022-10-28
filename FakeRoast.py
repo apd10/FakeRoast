@@ -3,9 +3,26 @@ import torch.nn as nn
 import numpy as np
 from math import sqrt
 import pdb
+import mmh3
+
+# TODO(aditya) vectorize
+def idx_circ(W_shape, wsize, seed):
+    n = np.prod(W_shape)
+    m = wsize
+    IDX = torch.arange(n)
+    for i in range(IDX.shape[0]):
+        h1 = mmh3.hash(str(i), seed=seed) % n
+        if h1 < m:
+            chunk = i // wsize
+            offset = i % wsize
+            IDX[i] = (mmh3.hash(str(chunk + 1033), seed=seed*3) + offset) % wsize
+        else:
+            IDX[i] = mmh3.hash(str(i), seed=seed*3) % wsize
+    return IDX.reshape(W_shape)
+    
 
 class FakeRoast(nn.Module):
-    def __init__(self, W_shape, is_global, weight=None, init_scale=None, compression=None):
+    def __init__(self, W_shape, is_global, weight=None, init_scale=None, compression=None, test=False, matrix_mode="circ_random"):
         super(FakeRoast, self).__init__()
         self.is_global = is_global
         if is_global:
@@ -24,7 +41,17 @@ class FakeRoast(nn.Module):
                 self.init_scale = 1/sqrt(W_shape[1])
             nn.init.uniform_(self.weight.data, a=-self.init_scale, b = self.init_scale)
         self.W_shape = W_shape
-        self.IDX = nn.Parameter(torch.randint(0, self.wsize, size=W_shape, dtype=torch.int64), requires_grad=False)
+        if test:
+            print("TESTING ...")
+            self.IDX = nn.Parameter(torch.arange(np.prod(W_shape)).reshape(W_shape), requires_grad=False)
+            assert(self.wsize >= np.prod(W_shape))
+        else:
+            if matrix_mode == "random":
+                self.IDX = nn.Parameter(torch.randint(0, self.wsize, size=W_shape, dtype=torch.int64), requires_grad=False)
+            elif matrix_mode == "circ_random":
+                self.IDX = idx_circ(W_shape, self.wsize, 42)
+            else:
+                raise NotImplementedError
         self.G = nn.Parameter(torch.randint(0, 2, size=W_shape, dtype=torch.float)*2 - 1, requires_grad=False)
 
     def forward(self):
@@ -56,15 +83,17 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self, input, output, bias, is_global, weight, init_scale, compression):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
         self.odim = output
+        self.compression = compression
+        self.is_global = is_global
 
         if is_global == False:
             init_scale = 1/sqrt(self.idim) 
-        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression)
+        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression, test)
         self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
         self.bias = None
         if bias :
@@ -74,6 +103,8 @@ class FakeRoastLinear(nn.Module):
         W = self.WHelper() * self.scale
         x = nn.functional.linear(x, W, self.bias)
         return x
+    def __repr__(self):
+        return "FakeRoastLinear(in={}, out={}, global={}, scale={}, compression={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression)
 
 
 
