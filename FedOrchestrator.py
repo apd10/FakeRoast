@@ -59,7 +59,6 @@ class FedOrchestrator:
                         global_ct = global_ct + ct
                 else:    
                     m.WHelper.weight.data = alpha * m.WHelper.weight.data + (1 - alpha) * torch.div(wt, ct+1e-3)
-                    #m.WHelper.weight.data = alpha * m.WHelper.weight.data + (1 - alpha) * wt
             
             if type(m) in [FakeRoastLinear, FakeRoastConv2d] :
                 m.bias.data = alpha * m.bias.data + (1 - alpha) * final_dic[n+'bs']
@@ -79,19 +78,20 @@ class FedOrchestrator:
             else:
                 FedOrchestrator.set_wts_roast(model, final_dic, is_global, alpha)
 
-    def get_wts_full(models):
+    def get_wts_full(models, weights):
         ''' no need to handle scale here as it is same across all the models '''
         ''' TODO(aditya) handle different device for models '''
         dics = []
         for i in range(len(models)):
             model = models[i]
             dics.append({})
+            weight = weights[i]
             for n, m in model.named_modules():
                 if type(m) in [nn.Linear, nn.Conv2d] :
-                    dics[i][n+'wt'] = m.weight.data.clone()
-                    dics[i][n+'bs'] = m.bias.data.clone()
+                    dics[i][n+'wt'] = m.weight.data.clone() * weight
+                    dics[i][n+'bs'] = m.bias.data.clone() * weight
                 elif type(m) == nn.Embedding:
-                    dics[i][n+'wt'] = m.weight.data.clone()
+                    dics[i][n+'wt'] = m.weight.data.clone() * weight
         
         # wt avg
         final_dic = {}
@@ -99,7 +99,7 @@ class FedOrchestrator:
             final_dic[k] = torch.clone(dics[0][k])
             for dic in dics[1:]:
                 final_dic[k] = final_dic[k] + dic[k]
-            final_dic[k] = (final_dic[k] / len(dics)) 
+            #final_dic[k] = (final_dic[k] / len(dics)) weighted average using weights
         return final_dic
 
     def get_wts_roast(models, is_global, weights):

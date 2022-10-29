@@ -83,17 +83,19 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test, matrix_mode="circ_random"):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
         self.odim = output
         self.compression = compression
         self.is_global = is_global
+        self.test = test
+        self.matrix_mode = matrix_mode
 
         if is_global == False:
-            init_scale = 1/sqrt(self.idim) 
-        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression, test)
+            init_scale = 1/sqrt(self.idim)
+        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression, test, matrix_mode)
         self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
         self.bias = None
         if bias :
@@ -104,7 +106,10 @@ class FakeRoastLinear(nn.Module):
         x = nn.functional.linear(x, W, self.bias)
         return x
     def __repr__(self):
-        return "FakeRoastLinear(in={}, out={}, global={}, scale={}, compression={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression)
+        if self.test:
+            return "FakeRoastLinearTESTLinearIDX(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression, self.test, self.matrix_mode)
+        else:
+            return "FakeRoastLinear(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression, self.test, self.matrix_mode)
 
 
 
@@ -121,7 +126,9 @@ class FakeRoastConv2d(nn.Module):
                     dilation=1,
                     groups=1, 
                     bias=True,
-                    padding_mode='zeros'):
+                    padding_mode='zeros',
+                    test=False,
+                    matrix_mode="circ_random"):
         super(FakeRoastConv2d, self).__init__()
         
         
@@ -142,7 +149,7 @@ class FakeRoastConv2d(nn.Module):
         k = 1.0 * groups / (in_channels * np.prod(kernel_size))
         if is_global == False:
             init_scale = sqrt(k) 
-        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression)
+        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test, matrix_mode=matrix_mode)
         
         self.scale = sqrt(k) / self.WHelper.init_scale
         self.bias = None
