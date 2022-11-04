@@ -22,9 +22,12 @@ def idx_circ(W_shape, wsize, seed):
     
 
 class FakeRoast(nn.Module):
-    def __init__(self, W_shape, is_global, weight=None, init_scale=None, compression=None, test=False, matrix_mode="circ_random"):
+    def __init__(self, W_shape, is_global, weight=None,
+                 init_scale=None, compression=None, test=False, 
+                 matrix_mode="random", seed=2023):
         super(FakeRoast, self).__init__()
         self.is_global = is_global
+        self.seed = seed
         if is_global:
             assert(weight is not None)
             assert(init_scale is not None)
@@ -41,18 +44,23 @@ class FakeRoast(nn.Module):
                 self.init_scale = 1/sqrt(W_shape[1])
             nn.init.uniform_(self.weight.data, a=-self.init_scale, b = self.init_scale)
         self.W_shape = W_shape
+
+        gen = torch.Generator()
+        gen.manual_seed(seed)
         if test:
             print("TESTING ...")
             self.IDX = nn.Parameter(torch.arange(np.prod(W_shape)).reshape(W_shape), requires_grad=False)
             assert(self.wsize >= np.prod(W_shape))
         else:
+            n = np.prod(W_shape)
             if matrix_mode == "random":
-                self.IDX = nn.Parameter(torch.randint(0, self.wsize, size=W_shape, dtype=torch.int64), requires_grad=False)
+                # making it consistent for power of 2 compression
+                self.IDX = nn.Parameter(torch.randint(0, n , size=W_shape, dtype=torch.int64, generator=gen) % self.wsize, requires_grad=False)
             elif matrix_mode == "circ_random":
-                self.IDX = idx_circ(W_shape, self.wsize, 42)
+                self.IDX = idx_circ(W_shape, n, seed) % self.wsize
             else:
                 raise NotImplementedError
-        self.G = nn.Parameter(torch.randint(0, 2, size=W_shape, dtype=torch.float)*2 - 1, requires_grad=False)
+        self.G = nn.Parameter(torch.randint(0, 2, size=W_shape, dtype=torch.float, generator=gen)*2 - 1, requires_grad=False)
 
     def forward(self):
         W = torch.mul(self.weight[self.IDX], self.G)
@@ -83,7 +91,7 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test, matrix_mode="circ_random"):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test, matrix_mode, seed):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
@@ -92,10 +100,11 @@ class FakeRoastLinear(nn.Module):
         self.is_global = is_global
         self.test = test
         self.matrix_mode = matrix_mode
+        self.seed = seed
 
         if is_global == False:
             init_scale = 1/sqrt(self.idim)
-        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression, test, matrix_mode)
+        self.WHelper = FakeRoast(self.W_shape, is_global, weight, init_scale, compression, test, matrix_mode, seed)
         self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
         self.bias = None
         if bias :
@@ -105,11 +114,12 @@ class FakeRoastLinear(nn.Module):
         W = self.WHelper() * self.scale
         x = nn.functional.linear(x, W, self.bias)
         return x
+
     def __repr__(self):
         if self.test:
             return "FakeRoastLinearTESTLinearIDX(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression, self.test, self.matrix_mode)
         else:
-            return "FakeRoastLinear(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression, self.test, self.matrix_mode)
+            return "FakeRoastLinear(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={}, seed={})".format(self.idim, self.odim, self.is_global, self.scale, self.compression, self.test, self.matrix_mode, self.seed)
 
 
 
