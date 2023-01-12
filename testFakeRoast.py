@@ -1,6 +1,6 @@
 import torch
 import pdb
-from FakeRoast import *
+from FakeRoast.FakeRoast import *
 import matplotlib.pyplot as plt
 PLOT=False
 

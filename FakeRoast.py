@@ -195,3 +195,77 @@ class FakeRoastEmbedding(nn.Module):
       def forward(self, x):
           W = self.WHelper() * self.scale
           return nn.functional.embedding(x, W, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
+
+
+class FakeRoastLSTM(nn.Module):
+    def __init__(self,
+                 input_dim,
+                 n_hidden,
+                 is_global,
+                 init_scale,
+                 compression,
+                 weight=None,):
+        super(FakeRoastLSTM, self).__init__()
+        self.input_dim = input_dim
+        self.n_hidden = n_hidden
+
+        self.W_shape1 = (input_dim, n_hidden * 4)
+        self.W_shape2 = (n_hidden, n_hidden * 4)
+
+        # self.W = nn.Parameter(torch.tensor(input_dim, n_hidden * 4))
+        # self.U = nn.Parameter(torch.tensor(n_hidden, n_hidden * 4))
+
+        self.WHelper1 = FakeRoast(
+            W_shape=self.W_shape1, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression)
+        self.WHelper2 = FakeRoast(
+            W_shape=self.W_shape2, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression)
+
+        self.scale = 1. / sqrt(self.n_hidden) / self.WHelper1.init_scale
+
+        self.bias = nn.Parameter(torch.tensor(
+            n_hidden * 4, dtype=torch.float32), requires_grad=True)
+
+        # self.init_scale = 1. / sqrt(self.n_hidden)
+        # for weight in self.parameters():
+        #     weight.data.uniform_(-self.init_scale, self.init_scale)
+
+    # Forward pass of the LSTM cell.
+    #
+    # x: the data with shape (batch_size, sequence_size, input_dim)
+
+    def forward(self, x):
+
+        batch_size, sequence_size, _ = x.size()
+
+        hidden_seq = []
+
+        h_t = torch.zeros(batch_size, self.n_hidden,
+                          dtype=torch.float32)  # hidden state
+        c_t = torch.zeros(batch_size, self.n_hidden,
+                          dtype=torch.float32)  # cell state
+
+        for t in range(sequence_size):
+            x_t = x[:, t, :]  # get batched values at current time step
+
+            # gates = x_t @ self.W + h_t @ self.U + self.bias
+
+            gates = x_t @ self.WHelper1() + h_t @ self.WHelper2() + self.bias
+
+            i_t, f_t, c_t_pl, o_t = (
+                torch.sigmoid(gates[:, :self.n_hidden]
+                              ),                       # input
+                torch.sigmoid(
+                    gates[:, self.n_hidden: self.n_hidden * 2]),    # forget
+                torch.tanh(gates[:, self.n_hidden * 2: self.n_hidden * 3]),
+                torch.sigmoid(gates[:, self.n_hidden * 3:]
+                              )                    # output
+            )
+
+            c_t = f_t * c_t + i_t * c_t_pl
+            h_t = o_t * torch.tanh(c_t)
+            hidden_seq.append(h_t.unsqueeze(0))
+
+        hidden_seq = torch.cat(hidden_seq, dim=0)
+        # reshape (sequence, batch, feature) to (batch, sequence, feature)
+        hidden_seq = hidden_seq.transpose(0, 1).contiguous()
+        return hidden_seq, (h_t, c_t)
