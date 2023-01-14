@@ -5,9 +5,9 @@ from math import sqrt
 import pdb
 import mmh3
 
-# TODO(aditya) vectorize
+N = 100000000 # your wsize should be less than this 
 
-
+# TODO(aditya) vectorize ONLY FOR LOCAL
 def idx_circ(W_shape, wsize, seed):
     n = np.prod(W_shape)
     m = wsize
@@ -64,17 +64,18 @@ class FakeRoast(nn.Module):
                 np.prod(W_shape)).reshape(W_shape), requires_grad=False)
             assert (self.wsize >= np.prod(W_shape))
         else:
-            n = np.prod(W_shape)
             if matrix_mode == "random":
                 # making it consistent for power of 2 compression
-                self.IDX = nn.Parameter(torch.randint(
-                    0, n, size=W_shape, dtype=torch.int64, generator=gen) % self.wsize, requires_grad=False)
-            elif matrix_mode == "circ_random":
-                self.IDX = idx_circ(W_shape, n, seed) % self.wsize
+                assert(N > self.wsize)
+                self.IDX = nn.Parameter(torch.randint(0, N, size=W_shape, dtype=torch.int64, generator=gen) % self.wsize, requires_grad=False)
+            elif matrix_mode == "circ_random": 
+                assert(not is_global) # fix the idx circ for global if needed
+                self.IDX = idx_circ(W_shape, N, seed) % self.wsize
             else:
                 raise NotImplementedError
-        self.G = nn.Parameter(torch.randint(
-            0, 2, size=W_shape, dtype=torch.float, generator=gen)*2 - 1, requires_grad=False)
+        self.G = nn.Parameter(torch.randint(0, 2, size=W_shape, dtype=torch.float, generator=gen)*2 - 1, requires_grad=False)
+        #print(self.IDX.view(-1)[0:5])
+        #print(self.G.view(-1)[0:5])
 
     def forward(self):
         W = torch.mul(self.weight[self.IDX], self.G)
@@ -110,17 +111,7 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self,
-                 input,
-                 output,
-                 bias,
-                 is_global,
-                 weight,
-                 init_scale,
-                 compression,
-                 test,
-                 matrix_mode,
-                 seed):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test=False, matrix_mode="random", seed=1024):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
@@ -155,20 +146,21 @@ class FakeRoastLinear(nn.Module):
 
 class FakeRoastConv2d(nn.Module):
     def __init__(self, in_channels,
-                 out_channels,
-                 kernel_size,
-                 is_global,
-                 weight=None,
-                 init_scale=None,
-                 compression=None,
-                 stride=1,
-                 padding=0,
-                 dilation=1,
-                 groups=1,
-                 bias=True,
-                 padding_mode='zeros',
-                 test=False,
-                 matrix_mode="circ_random"):
+                    out_channels,
+                    kernel_size,
+                    is_global,
+                    weight=None,
+                    init_scale=None,
+                    compression=None,
+                    stride=1,
+                    padding=0,
+                    dilation=1,
+                    groups=1, 
+                    bias=True,
+                    padding_mode='zeros',
+                    test=False,
+                    matrix_mode="random",
+                    seed = 2023):
         super(FakeRoastConv2d, self).__init__()
 
         if type(kernel_size) == int:
@@ -182,16 +174,21 @@ class FakeRoastConv2d(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
+        self.is_global = is_global
+        self.compression = compression
+        self.test = test
+        self.matrix_mode = matrix_mode
+        self.seed = seed
+        
 
         W_shape = (out_channels, int(in_channels/groups),
                    kernel_size[0], kernel_size[1])
 
         k = 1.0 * groups / (in_channels * np.prod(kernel_size))
         if is_global == False:
-            init_scale = sqrt(k)
-        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale,
-                                 compression, test=test, matrix_mode=matrix_mode)
-
+            init_scale = sqrt(k) 
+        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test, matrix_mode=matrix_mode, seed=seed)
+        
         self.scale = sqrt(k) / self.WHelper.init_scale
         self.bias = None
         if self.is_bias:
@@ -203,6 +200,11 @@ class FakeRoastConv2d(nn.Module):
                                        padding=self.padding, dilation=self.dilation, groups=self.groups)
         return x
 
+    def __repr__(self):
+        if self.test:
+            return "FakeRoastConv2dTESTLinearIDX(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={})".format(self.in_channels, self.out_channels, self.is_global, self.scale, self.compression, self.test, self.matrix_mode)
+        else:
+            return "FakeRoastConv2d(in={}, out={}, global={}, scale={}, compression={}, testLinearIDX={}, matrix_mode={}, seed={})".format(self.in_channels, self.out_channels, self.is_global, self.scale, self.compression, self.test, self.matrix_mode, self.seed)
 
 class FakeRoastEmbedding(nn.Module):
     def __init__(self,
