@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pdb
 from FakeRoast.FakeRoast import *
+import pdb
 
 class FedOrchestrator:
     # currently not storing any state. Just a set of gradient/weight communication functions. 
@@ -59,9 +60,15 @@ class FedOrchestrator:
                         global_ct = global_ct + ct
                 else:    
                     m.WHelper.weight.data = alpha * m.WHelper.weight.data + (1 - alpha) * torch.div(wt, ct+1e-3)
+            elif type(m) in [nn.Linear, nn.Conv2d, nn.Embedding]:
+                m.weight.data =   alpha * m.weight.data  + (1-alpha) * final_dic[n+'wt']
+            else:
+                if n not in [''] and (not n.endswith('WHelper')):
+                    print("[set]NOT FOUND MODULE __ CHECK :", n)
             
-            if type(m) in [FakeRoastLinear, FakeRoastConv2d] :
+            if type(m) in [FakeRoastLinear, FakeRoastConv2d, nn.Linear, nn.Conv2d] :
                 m.bias.data = alpha * m.bias.data + (1 - alpha) * final_dic[n+'bs']
+
         # TODO(aditya) global behavior is untested
         if is_global:
             for n, m in model.named_modules():
@@ -116,6 +123,15 @@ class FedOrchestrator:
                     dics[i][n+'bs'] = m.bias.data * weight
                 elif type(m) == FakeRoastEmbedding:
                     dics[i][n+'wt'] = m.WHelper.wt_comp_to_orig(m.WHelper.weight.data) * weight
+                elif type(m) in [nn.Linear, nn.Conv2d] :
+                    dics[i][n+'wt'] = m.weight.data.clone() * weight
+                    dics[i][n+'bs'] = m.bias.data.clone() * weight
+                elif type(m) == nn.Embedding:
+                    dics[i][n+'wt'] = m.weight.data.clone() * weight
+                else:
+                    if n not in [''] and (not n.endswith('WHelper')):
+                        print("[set]NOT FOUND MODULE __ CHECK :", n)
+         
         
         # wt avg
         final_dic = {}
@@ -140,6 +156,8 @@ class FedOrchestrator:
                     dics[i][n+'bs'] = m.bias.data * weight
                 elif type(m) == FakeRoastEmbedding:
                     dics[i][n+'wt'] = m.WHelper.wt_comp_to_orig(m.WHelper.weight.data) * weight
+                else:
+                    raise NotImplementedError
         
         # wt avg
         final_dic = {}
