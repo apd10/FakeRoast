@@ -82,6 +82,11 @@ class FakeRoast(nn.Module):
         W = torch.mul(self.weight[self.IDX], self.G)
         return W
 
+    def forward_partial(self, x):
+        W = torch.mul(self.weight[self.IDX[x]], self.G[x])
+        return W
+        
+
     def grad_comp_to_orig(self, grad):  # grad of compressed to original
         return torch.mul(grad[self.IDX], self.G)
 
@@ -237,8 +242,10 @@ class FakeRoastEmbedding(nn.Module):
         self.sparse = sparse
 
     def forward(self, x):
-        W = self.WHelper() * self.scale
-        return nn.functional.embedding(x, W, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
+        #W = self.WHelper() * self.scale
+        #return nn.functional.embedding(x, W, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
+        W = self.WHelper.forward_partial(x) * self.scale
+        return W
     def __repr__(self):
             return "FakeRoastEmbedding(num_embeddings={}, embedding_dim={}, compression={}, seed={})".format(self.num_embeddings, self.embedding_dim, self.compression, self.WHelper.seed )
 
@@ -350,7 +357,7 @@ class LowRankLinear(nn.Module):
         output = W.T.shape[1]
         U,S,Vh = torch.svd_lowrank(W.T, q=self.intermediate_dim, niter=10)
         B = torch.matmul(U, torch.sqrt(torch.diag(S)))
-        C = torch.matmul(Vh, torch.sqrt(torch.diag(S))) 
+        C = torch.matmul(Vh, torch.sqrt(torch.diag(S)))
         return B, C.T
 
     def wt_comp_to_orig(self, B, C):
@@ -370,13 +377,13 @@ class LowRankEmbedding(nn.Module):
                  scale_grad_by_freq=False,
                  sparse=False):
         super(LowRankEmbedding, self).__init__()
-        effective_dim = int(embedding_dim * compression)
-        assert(effective_dim > 0)
-        self.embedding = nn.Parameter(torch.zeros(num_embeddings, effective_dim), requires_grad=True)
-        self.transform = nn.Parameter(torch.zeros(effective_dim, embedding_dim), requires_grad=True)
+        self.intermediate_dim= int(((embedding_dim * num_embeddings) * compression) / (num_embeddings + embedding_dim))
+        assert(self.intermediate_dim > 0)
+        self.w1 = nn.Parameter(torch.zeros(num_embeddings, self.intermediate_dim), requires_grad=True)
+        self.w2 = nn.Parameter(torch.zeros(self.intermediate_dim, embedding_dim), requires_grad=True)
 
-        nn.init.kaiming_normal_(self.embedding.data, nonlinearity='relu')
-        nn.init.kaiming_normal_(self.transform.data, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.w1.data, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.w2.data, nonlinearity='relu')
         self.padding_idx = padding_idx
         self.max_norm = max_norm
         self.norm_type = norm_type
@@ -384,6 +391,17 @@ class LowRankEmbedding(nn.Module):
         self.sparse = sparse
 
     def forward(self, x):
-        emb = nn.functional.embedding(x, self.embedding, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
-        emb =torch.matmul(emb, self.transform)
+        emb = nn.functional.embedding(x, self.w1, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
+        emb =torch.matmul(emb, self.w2)
         return emb
+
+
+    def wt_orig_to_comp(self, W):
+        U,S,Vh = torch.svd_lowrank(W, q=self.intermediate_dim, niter=10)
+        B = torch.matmul(U, torch.sqrt(torch.diag(S)))
+        C = torch.matmul(Vh, torch.sqrt(torch.diag(S)))
+        return B, C.T
+
+    def wt_comp_to_orig(self, B, C):
+        # orig is out,in
+        return torch.matmul(B,C)
