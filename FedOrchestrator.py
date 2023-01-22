@@ -69,7 +69,7 @@ class FedOrchestrator:
             elif type(m) in [nn.Linear, nn.Conv2d, nn.Embedding]:
                 m.weight.data =   alpha * m.weight.data  + (1-alpha) * final_dic[n+'wt']
             else:
-                if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('WHelper')):
+                if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
                     print("[set]NOT FOUND MODULE __ CHECK :", n)
             
             if type(m) in [FakeRoastLinear, FakeRoastConv2d, nn.Linear, nn.Conv2d, LowRankLinear] :
@@ -139,7 +139,7 @@ class FedOrchestrator:
                 elif type(m) == nn.Embedding:
                     dics[i][n+'wt'] = m.weight.data.clone() * weight
                 else:
-                    if n not in ['','fc', 'fc.1','fc.3'] and (not n.endswith('WHelper')):
+                    if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
                         print("[set]NOT FOUND MODULE __ CHECK :", n)
          
         

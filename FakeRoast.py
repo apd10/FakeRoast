@@ -231,6 +231,7 @@ class FakeRoastEmbedding(nn.Module):
             init_scale = sqrt(1. / num_embeddings)
         self.WHelper = FakeRoast(
             W_shape, is_global, weight, init_scale, compression)
+        torch.nn.init.normal_(self.WHelper.weight)
         self.compression = compression
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -334,8 +335,8 @@ class LowRankLinear(nn.Module):
         assert(self.intermediate_dim > 0)
         self.w1 = nn.Parameter(torch.zeros((self.idim, self.intermediate_dim), dtype=torch.float), requires_grad=True)
         self.w2 = nn.Parameter(torch.zeros((self.intermediate_dim, self.odim), dtype=torch.float), requires_grad=True)
-        nn.init.kaiming_normal_(self.w1.data, nonlinearity='relu')
-        nn.init.kaiming_normal_(self.w2.data, nonlinearity='relu')
+        nn.init.normal_(self.w1.data)
+        nn.init.normal_(self.w2.data)
         self.bias = None
         if bias:
             self.bias = nn.Parameter(torch.zeros(
@@ -382,13 +383,15 @@ class LowRankEmbedding(nn.Module):
         self.w1 = nn.Parameter(torch.zeros(num_embeddings, self.intermediate_dim), requires_grad=True)
         self.w2 = nn.Parameter(torch.zeros(self.intermediate_dim, embedding_dim), requires_grad=True)
 
-        nn.init.kaiming_normal_(self.w1.data, nonlinearity='relu')
-        nn.init.kaiming_normal_(self.w2.data, nonlinearity='relu')
+        nn.init.normal_(self.w1.data)
+        nn.init.xavier_normal_(self.w2.data)
         self.padding_idx = padding_idx
         self.max_norm = max_norm
         self.norm_type = norm_type
         self.scale_grad_by_freq = scale_grad_by_freq
         self.sparse = sparse
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
 
     def forward(self, x):
         emb = nn.functional.embedding(x, self.w1, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
@@ -405,3 +408,6 @@ class LowRankEmbedding(nn.Module):
     def wt_comp_to_orig(self, B, C):
         # orig is out,in
         return torch.matmul(B,C)
+    
+    def __repr__(self):
+        return "LowRankEmbedding(in={}, int={}, out={})".format(self.num_embeddings, self.intermediate_dim, self.embedding_dim)
