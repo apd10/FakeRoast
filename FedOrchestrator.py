@@ -60,13 +60,19 @@ class FedOrchestrator:
                         global_ct = global_ct + ct
                 else:    
                     m.WHelper.weight.data = alpha * m.WHelper.weight.data + (1 - alpha) * torch.div(wt, ct+1e-3)
+
+            elif type(m) in [LowRankLinear]:
+                w1, w2 = m.wt_orig_to_comp(final_dic[n+'wt'])
+                m.w1.data = alpha * m.w1.data  + (1-alpha) * w1
+                m.w2.data = alpha * m.w2.data  + (1-alpha) * w2
+
             elif type(m) in [nn.Linear, nn.Conv2d, nn.Embedding]:
                 m.weight.data =   alpha * m.weight.data  + (1-alpha) * final_dic[n+'wt']
             else:
-                if n not in [''] and (not n.endswith('WHelper')):
+                if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('WHelper')):
                     print("[set]NOT FOUND MODULE __ CHECK :", n)
             
-            if type(m) in [FakeRoastLinear, FakeRoastConv2d, nn.Linear, nn.Conv2d] :
+            if type(m) in [FakeRoastLinear, FakeRoastConv2d, nn.Linear, nn.Conv2d, LowRankLinear] :
                 m.bias.data = alpha * m.bias.data + (1 - alpha) * final_dic[n+'bs']
 
         # TODO(aditya) global behavior is untested
@@ -121,6 +127,9 @@ class FedOrchestrator:
                 if type(m) in [FakeRoastLinear, FakeRoastConv2d]:
                     dics[i][n+'wt'] = m.WHelper.wt_comp_to_orig(m.WHelper.weight.data) * weight
                     dics[i][n+'bs'] = m.bias.data * weight
+                elif type(m) in [LowRankLinear]:
+                    dics[i][n+'wt'] = m.wt_comp_to_orig(m.w1.data, m.w2.data) * weight
+                    dics[i][n+'bs'] = m.bias.data * weight
                 elif type(m) == FakeRoastEmbedding:
                     dics[i][n+'wt'] = m.WHelper.wt_comp_to_orig(m.WHelper.weight.data) * weight
                 elif type(m) in [nn.Linear, nn.Conv2d] :
@@ -129,7 +138,7 @@ class FedOrchestrator:
                 elif type(m) == nn.Embedding:
                     dics[i][n+'wt'] = m.weight.data.clone() * weight
                 else:
-                    if n not in [''] and (not n.endswith('WHelper')):
+                    if n not in ['','fc', 'fc.1','fc.3'] and (not n.endswith('WHelper')):
                         print("[set]NOT FOUND MODULE __ CHECK :", n)
          
         

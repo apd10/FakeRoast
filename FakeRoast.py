@@ -5,7 +5,8 @@ from math import sqrt
 import pdb
 import mmh3
 
-N = 100000000 # your wsize should be less than this 
+#N = 100000000 # your wsize should be less than this 
+N  = 536870912 # your wsize should be less than this 
 
 # TODO(aditya) vectorize ONLY FOR LOCAL
 def idx_circ(W_shape, wsize, seed):
@@ -225,7 +226,7 @@ class FakeRoastEmbedding(nn.Module):
             init_scale = sqrt(1. / num_embeddings)
         self.WHelper = FakeRoast(
             W_shape, is_global, weight, init_scale, compression)
-
+        self.compression = compression
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         self.scale = sqrt(1. / num_embeddings) / self.WHelper.init_scale
@@ -238,7 +239,8 @@ class FakeRoastEmbedding(nn.Module):
     def forward(self, x):
         W = self.WHelper() * self.scale
         return nn.functional.embedding(x, W, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
-
+    def __repr__(self):
+            return "FakeRoastEmbedding(num_embeddings={}, embedding_dim={}, compression={}, seed={})".format(self.num_embeddings, self.embedding_dim, self.compression, self.WHelper.seed )
 
 class FakeRoastLSTM(nn.Module):
     def __init__(self,
@@ -312,3 +314,76 @@ class FakeRoastLSTM(nn.Module):
         # reshape (sequence, batch, feature) to (batch, sequence, feature)
         hidden_seq = hidden_seq.transpose(0, 1).contiguous()
         return hidden_seq, (h_t, c_t)
+
+
+class LowRankLinear(nn.Module):
+    def __init__(self, input, output, compression, bias):
+        super(LowRankLinear, self).__init__()
+        self.idim = input
+        self.odim = output
+        self.compression = compression
+        self.intermediate_dim = int(((input * output) * compression) / (input + output))
+
+        assert(self.intermediate_dim > 0)
+        self.w1 = nn.Parameter(torch.zeros((self.idim, self.intermediate_dim), dtype=torch.float), requires_grad=True)
+        self.w2 = nn.Parameter(torch.zeros((self.intermediate_dim, self.odim), dtype=torch.float), requires_grad=True)
+        nn.init.kaiming_normal_(self.w1.data, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.w2.data, nonlinearity='relu')
+        self.bias = None
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(
+                self.odim, dtype=torch.float), requires_grad=True)
+
+    def forward(self, x):
+        W = torch.matmul(self.w1, self.w2)
+        x = torch.matmul(x, W)
+        if self.bias is not None:
+            x = x + self.bias
+        return x
+
+    def __repr__(self):
+        return "LowRankLinear(in={}, int={}, out={})".format(self.idim, self.intermediate_dim, self.odim)
+
+    def wt_orig_to_comp(self, W): 
+        # orig is (out,in)
+        input = W.T.shape[0]
+        output = W.T.shape[1]
+        U,S,Vh = torch.svd_lowrank(W.T, q=self.intermediate_dim, niter=10)
+        B = torch.matmul(U, torch.sqrt(torch.diag(S)))
+        C = torch.matmul(Vh, torch.sqrt(torch.diag(S))) 
+        return B, C.T
+
+    def wt_comp_to_orig(self, B, C):
+        # orig is out,in
+        return torch.matmul(B,C).T 
+
+
+
+class LowRankEmbedding(nn.Module):
+    def __init__(self,
+                 num_embeddings,
+                 embedding_dim,
+                 compression=None,
+                 padding_idx=None,
+                 max_norm=None,
+                 norm_type=2.0,
+                 scale_grad_by_freq=False,
+                 sparse=False):
+        super(LowRankEmbedding, self).__init__()
+        effective_dim = int(embedding_dim * compression)
+        assert(effective_dim > 0)
+        self.embedding = nn.Parameter(torch.zeros(num_embeddings, effective_dim), requires_grad=True)
+        self.transform = nn.Parameter(torch.zeros(effective_dim, embedding_dim), requires_grad=True)
+
+        nn.init.kaiming_normal_(self.embedding.data, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.transform.data, nonlinearity='relu')
+        self.padding_idx = padding_idx
+        self.max_norm = max_norm
+        self.norm_type = norm_type
+        self.scale_grad_by_freq = scale_grad_by_freq
+        self.sparse = sparse
+
+    def forward(self, x):
+        emb = nn.functional.embedding(x, self.embedding, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse)
+        emb =torch.matmul(emb, self.transform)
+        return emb
