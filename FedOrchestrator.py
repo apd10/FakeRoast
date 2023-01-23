@@ -68,11 +68,17 @@ class FedOrchestrator:
 
             elif type(m) in [nn.Linear, nn.Conv2d, nn.Embedding]:
                 m.weight.data =   alpha * m.weight.data  + (1-alpha) * final_dic[n+'wt']
+            elif type(m) == FakeRoastLSTM:
+                wt1, ct1 = m.WHelper1.wt_orig_to_comp(final_dic[n+'wt1'])
+                wt2, ct2 = m.WHelper2.wt_orig_to_comp(final_dic[n+'wt2'])
+                assert is_global == False
+                m.WHelper1.weight.data = alpha * m.WHelper1.weight.data + (1 - alpha) * torch.div(wt1, ct1+1e-3)
+                m.WHelper2.weight.data = alpha * m.WHelper2.weight.data + (1 - alpha) * torch.div(wt2, ct2+1e-3)
             else:
                 if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
                     print("[set]NOT FOUND MODULE __ CHECK :", n)
             
-            if type(m) in [FakeRoastLinear, FakeRoastConv2d, nn.Linear, nn.Conv2d, LowRankLinear] :
+            if type(m) in [FakeRoastLinear, FakeRoastConv2d, FakeRoastLSTM, nn.Linear, nn.Conv2d, LowRankLinear] :
                 m.bias.data = alpha * m.bias.data + (1 - alpha) * final_dic[n+'bs']
 
         # TODO(aditya) global behavior is untested
@@ -138,6 +144,10 @@ class FedOrchestrator:
                     dics[i][n+'bs'] = m.bias.data.clone() * weight
                 elif type(m) == nn.Embedding:
                     dics[i][n+'wt'] = m.weight.data.clone() * weight
+                elif type(m) == FakeRoastLSTM:
+                    dics[i][n+'wt1'] = m.WHelper1.wt_comp_to_orig(m.WHelper1.weight.data) * weight
+                    dics[i][n+'wt2'] = m.WHelper2.wt_comp_to_orig(m.WHelper2.weight.data) * weight
+                    dics[i][n+'bs'] = m.bias.data * weight
                 else:
                     if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
                         print("[set]NOT FOUND MODULE __ CHECK :", n)
