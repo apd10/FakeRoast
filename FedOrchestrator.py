@@ -75,7 +75,7 @@ class FedOrchestrator:
                 m.WHelper1.weight.data = alpha * m.WHelper1.weight.data + (1 - alpha) * torch.div(wt1, ct1+1e-3)
                 m.WHelper2.weight.data = alpha * m.WHelper2.weight.data + (1 - alpha) * torch.div(wt2, ct2+1e-3)
             else:
-                if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
+                if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('WHelper')) and (not type(m) in [nn.Dropout]):
                     print("[set]NOT FOUND MODULE __ CHECK :", n)
             
             if type(m) in [FakeRoastLinear, FakeRoastConv2d, FakeRoastLSTM, nn.Linear, nn.Conv2d, LowRankLinear] :
@@ -149,7 +149,7 @@ class FedOrchestrator:
                     dics[i][n+'wt2'] = m.WHelper2.wt_comp_to_orig(m.WHelper2.weight.data) * weight
                     dics[i][n+'bs'] = m.bias.data * weight
                 else:
-                    if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('whelper')) and (not type(m) in [nn.Dropout]):
+                    if n not in ['', 'fc', 'fc.1', 'fc.3'] and (not n.endswith('WHelper')) and (not type(m) in [nn.Dropout]):
                         print("[set]NOT FOUND MODULE __ CHECK :", n)
          
         
