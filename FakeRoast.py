@@ -263,6 +263,7 @@ class FakeRoastLSTM(nn.Module):
         self.input_dim = input_dim
         self.n_hidden = n_hidden
 
+        # WHelper1 is too small for Roast, replaced with W below
         # self.W_shape1 = (input_dim, n_hidden * 4)
         self.W_shape2 = (n_hidden, n_hidden * 4)
 
