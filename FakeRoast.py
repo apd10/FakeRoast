@@ -257,26 +257,27 @@ class FakeRoastLSTM(nn.Module):
                  is_global,
                  init_scale,
                  compression,
-                 weight=None,):
+                 matrix_mode,
+                 weight=None):
         super(FakeRoastLSTM, self).__init__()
         self.input_dim = input_dim
         self.n_hidden = n_hidden
 
-        self.W_shape1 = (input_dim, n_hidden * 4)
+        # self.W_shape1 = (input_dim, n_hidden * 4)
         self.W_shape2 = (n_hidden, n_hidden * 4)
 
-        # self.W = nn.Parameter(torch.tensor(input_dim, n_hidden * 4))
+        self.W = nn.Parameter(torch.zeros([input_dim, n_hidden * 4], dtype=torch.float32), requires_grad=True)
         # self.U = nn.Parameter(torch.tensor(n_hidden, n_hidden * 4))
 
-        self.WHelper1 = FakeRoast(
-            W_shape=self.W_shape1, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression)
+        # self.WHelper1 = FakeRoast(
+        #     W_shape=self.W_shape1, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression, matrix_mode=matrix_mode)
         self.WHelper2 = FakeRoast(
-            W_shape=self.W_shape2, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression)
+            W_shape=self.W_shape2, is_global=is_global, init_scale=init_scale, weight=weight, compression=compression, matrix_mode=matrix_mode)
 
-        self.scale = 1. / sqrt(self.n_hidden) / self.WHelper1.init_scale
+        self.scale = 1. / sqrt(self.n_hidden) / self.WHelper2.init_scale
 
-        self.bias = nn.Parameter(torch.tensor(
-            n_hidden * 4, dtype=torch.float32), requires_grad=True)
+        self.bias = nn.Parameter(torch.zeros(
+            [n_hidden * 4], dtype=torch.float32), requires_grad=True)
 
         # self.init_scale = 1. / sqrt(self.n_hidden)
         # for weight in self.parameters():
@@ -293,25 +294,24 @@ class FakeRoastLSTM(nn.Module):
         hidden_seq = []
 
         h_t = torch.zeros(batch_size, self.n_hidden,
-                          dtype=torch.float32)  # hidden state
+                          dtype=torch.float32, device="cuda")  # hidden state
         c_t = torch.zeros(batch_size, self.n_hidden,
-                          dtype=torch.float32)  # cell state
+                          dtype=torch.float32, device="cuda")  # cell state
 
         for t in range(sequence_size):
             x_t = x[:, t, :]  # get batched values at current time step
 
             # gates = x_t @ self.W + h_t @ self.U + self.bias
 
-            gates = x_t @ self.WHelper1() + h_t @ self.WHelper2() + self.bias
+            # gates = x_t @ self.WHelper1() + h_t @ self.WHelper2() + self.bias
+
+            gates = x_t @ self.W + h_t @ self.WHelper2() + self.bias
 
             i_t, f_t, c_t_pl, o_t = (
-                torch.sigmoid(gates[:, :self.n_hidden]
-                              ),                       # input
-                torch.sigmoid(
-                    gates[:, self.n_hidden: self.n_hidden * 2]),    # forget
+                torch.sigmoid(gates[:, :self.n_hidden]),                       # input
+                torch.sigmoid(gates[:, self.n_hidden: self.n_hidden * 2]),     # forget
                 torch.tanh(gates[:, self.n_hidden * 2: self.n_hidden * 3]),
-                torch.sigmoid(gates[:, self.n_hidden * 3:]
-                              )                    # output
+                torch.sigmoid(gates[:, self.n_hidden * 3:])                    # output
             )
 
             c_t = f_t * c_t + i_t * c_t_pl
