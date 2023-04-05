@@ -28,6 +28,8 @@ def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params
 def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, init_seed, chunk_size):
     seed = init_seed * 1024
     #print(name, "->", type(pytorch_model))
+
+
     for attr in dir(pytorch_model):
         target_attr = getattr(pytorch_model, attr)
         #print(name, "->", attr, "type:", type(target_attr), target_attr)
@@ -78,5 +80,51 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
             setattr(pytorch_model, attr, new_attr)
         
     for name, immediate_child_module in  pytorch_model.named_children():
+        target_attr = immediate_child_module
+        if type(immediate_child_module) in [torch.nn.modules.Linear , torch.nn.modules.linear.Linear]:
+            seed = seed + 1
+            new_attr = FakeRoastLinear(target_attr.in_features, 
+                                       target_attr.out_features,
+                                       target_attr.bias is not None,
+                                       is_global,
+                                       roast_array,
+                                       ROAST_INIT,
+                                       compression,
+                                       False,
+                                       "random",
+                                       seed)
+            print("replaced", target_attr)
+            setattr(pytorch_model, name, new_attr)
+        elif type(immediate_child_module) == torch.nn.modules.sparse.Embedding:
+            seed = seed + 1
+            new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
+                                          target_attr.embedding_dim,
+                                          is_global, roast_array, ROAST_INIT, 
+                                          compression, target_attr.padding_idx, 
+                                          target_attr.max_norm, target_attr.norm_type,
+                                          target_attr.scale_grad_by_freq, 
+                                          target_attr.sparse)
+            print("replaced", target_attr)
+            setattr(pytorch_model, name, new_attr)
+        elif type(immediate_child_module) == torch.nn.modules.Conv2d:
+            seed = seed + 1
+            new_attr = FakeRoastConv2d( target_attr.in_channels,
+                              target_attr.out_channels,
+                              target_attr.kernel_size,
+                              is_global,
+                              roast_array,
+                              ROAST_INIT,
+                              compression,
+                              target_attr.stride,
+                              target_attr.padding,
+                              target_attr.dilation,
+                              target_attr.groups, 
+                              target_attr.bias is not None,
+                              target_attr.padding_mode,
+                              False,
+                              "random",
+                              seed)
+            print("replaced", target_attr)
+            setattr(pytorch_model, name, new_attr)
         init_seed = init_seed + 1
         _roast(name, immediate_child_module, is_global, roast_array, init_std, compression, init_seed, chunk_size)
