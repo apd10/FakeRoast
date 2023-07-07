@@ -6,7 +6,14 @@ import numpy as np
 
 ROAST_INIT=0.04
 
-def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params=None):
+def get_module_params(target_attr):
+    ns = 0
+    for p in target_attr.parameters():
+        if p.requires_grad :
+            ns += p.numel()
+    return ns
+
+def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params=None, limit_size=-1):
     assert((not is_global)  or (memory_mb is not None or max_params is not None))
     assert((is_global) or (compression))
 
@@ -22,10 +29,10 @@ def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params
         
     seed = 1
     rzmodel = copy.deepcopy(pytorch_model)
-    _roast("head", rzmodel, is_global, roast_array, init_std, compression, seed, chunk_size=32)
+    _roast("head", rzmodel, is_global, roast_array, init_std, compression, seed, chunk_size=32, limit_size=limit_size)
     return rzmodel
 
-def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, init_seed, chunk_size):
+def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size):
     seed = init_seed * 1024
     #print(name, "->", type(pytorch_model))
 
@@ -34,6 +41,9 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
         target_attr = getattr(pytorch_model, attr)
         #print(name, "->", attr, "type:", type(target_attr), target_attr)
         if type(target_attr) == torch.nn.modules.Linear:
+            if get_module_params(target_attr) < limit_size:
+                print("ignored", target_attr)
+                continue
             seed = seed + 1
             new_attr = FakeRoastLinear(target_attr.in_features, 
                                        target_attr.out_features,
@@ -48,6 +58,9 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
             print("replaced", target_attr)
             setattr(pytorch_model, attr, new_attr)
         elif type(target_attr) == torch.nn.modules.sparse.Embedding:
+            if get_module_params(target_attr) < limit_size:
+                print("ignored", target_attr)
+                continue
             seed = seed + 1
             new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
                                           target_attr.embedding_dim,
@@ -59,6 +72,9 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
             print("replaced", target_attr)
             setattr(pytorch_model, attr, new_attr)
         elif type(target_attr) == torch.nn.modules.Conv2d:
+            if get_module_params(target_attr) < limit_size:
+                print("ignored", target_attr)
+                continue
             seed = seed + 1
             new_attr = FakeRoastConv2d( target_attr.in_channels,
                               target_attr.out_channels,
@@ -81,7 +97,10 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
         
     for name, immediate_child_module in  pytorch_model.named_children():
         target_attr = immediate_child_module
-        if type(immediate_child_module) in [torch.nn.modules.Linear , torch.nn.modules.linear.Linear]:
+
+        if get_module_params(immediate_child_module) < limit_size:
+            print("ignored", immediate_child_module)
+        elif type(immediate_child_module) in [torch.nn.modules.Linear , torch.nn.modules.linear.Linear]:
             seed = seed + 1
             new_attr = FakeRoastLinear(target_attr.in_features, 
                                        target_attr.out_features,
@@ -127,4 +146,4 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
             print("replaced", target_attr)
             setattr(pytorch_model, name, new_attr)
         init_seed = init_seed + 1
-        _roast(name, immediate_child_module, is_global, roast_array, init_std, compression, init_seed, chunk_size)
+        _roast(name, immediate_child_module, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size)
