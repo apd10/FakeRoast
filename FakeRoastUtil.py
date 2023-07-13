@@ -13,7 +13,7 @@ def get_module_params(target_attr):
             ns += p.numel()
     return ns
 
-def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params=None, limit_size=-1):
+def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params=None, limit_size=-1, max_scale=100000):
     assert((not is_global)  or (memory_mb is not None or max_params is not None))
     assert((is_global) or (compression))
 
@@ -29,18 +29,18 @@ def roast(pytorch_model, is_global, compression=None, memory_mb=None, max_params
         
     seed = 1
     rzmodel = copy.deepcopy(pytorch_model)
-    _roast("head", rzmodel, is_global, roast_array, init_std, compression, seed, chunk_size=32, limit_size=limit_size)
+    _roast("head", rzmodel, is_global, roast_array, init_std, compression, seed, chunk_size=32, limit_size=limit_size, max_scale=max_scale)
     return rzmodel
 
-def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size):
+def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size, max_scale):
     seed = init_seed * 1024
-    #print(name, "->", type(pytorch_model))
+    #print(name, "=>", type(pytorch_model))
 
 
     for attr in dir(pytorch_model):
         target_attr = getattr(pytorch_model, attr)
-        #print(name, "->", attr, "type:", type(target_attr), target_attr)
-        if type(target_attr) == torch.nn.modules.Linear:
+        #print(name, "->", attr, "type:", type(target_attr))
+        if type(target_attr) in[torch.nn.Linear, torch.nn.modules.Linear]:
             if get_module_params(target_attr) < limit_size:
                 print("ignored", target_attr)
                 continue
@@ -55,6 +55,9 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                                        False,
                                        "random",
                                        seed)
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+                continue
             print("replaced", target_attr)
             setattr(pytorch_model, attr, new_attr)
         elif type(target_attr) == torch.nn.modules.sparse.Embedding:
@@ -69,9 +72,12 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                                           target_attr.max_norm, target_attr.norm_type,
                                           target_attr.scale_grad_by_freq, 
                                           target_attr.sparse)
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+                continue
             print("replaced", target_attr)
             setattr(pytorch_model, attr, new_attr)
-        elif type(target_attr) == torch.nn.modules.Conv2d:
+        elif type(target_attr) ==  torch.nn.modules.Conv2d:
             if get_module_params(target_attr) < limit_size:
                 print("ignored", target_attr)
                 continue
@@ -92,6 +98,9 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                               False,
                               "random",
                               seed)
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+                continue
             print("replaced", target_attr)
             setattr(pytorch_model, attr, new_attr)
         
@@ -112,8 +121,12 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                                        False,
                                        "random",
                                        seed)
-            print("replaced", target_attr)
-            setattr(pytorch_model, name, new_attr)
+
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+            else:
+                print("replaced", target_attr)
+                setattr(pytorch_model, name, new_attr)
         elif type(immediate_child_module) == torch.nn.modules.sparse.Embedding:
             seed = seed + 1
             new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
@@ -123,8 +136,11 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                                           target_attr.max_norm, target_attr.norm_type,
                                           target_attr.scale_grad_by_freq, 
                                           target_attr.sparse)
-            print("replaced", target_attr)
-            setattr(pytorch_model, name, new_attr)
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+            else:
+                print("replaced", target_attr)
+                setattr(pytorch_model, name, new_attr)
         elif type(immediate_child_module) == torch.nn.modules.Conv2d:
             seed = seed + 1
             new_attr = FakeRoastConv2d( target_attr.in_channels,
@@ -143,7 +159,10 @@ def _roast(name, pytorch_model, is_global, roast_array, init_std, compression, i
                               False,
                               "random",
                               seed)
-            print("replaced", target_attr)
-            setattr(pytorch_model, name, new_attr)
+            if new_attr.scale > max_scale:
+                print("ignored due to scale", target_attr)
+            else:
+                print("replaced", target_attr)
+                setattr(pytorch_model, name, new_attr)
         init_seed = init_seed + 1
-        _roast(name, immediate_child_module, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size)
+        _roast(name, immediate_child_module, is_global, roast_array, init_std, compression, init_seed, chunk_size, limit_size, max_scale)
