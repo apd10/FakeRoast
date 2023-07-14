@@ -9,7 +9,8 @@
 
 '''
 import torch
-from FakeRoast import *
+from .FakeRoast import *
+#from FakeRoast import *
 
 # general functions
 NONE=0
@@ -69,10 +70,12 @@ class ModelPrinter(ModelParser):
         self.run("model", self.model, {})
 
 class Roastable:
-    def __init__(self):
+    def __init__(self, module_limit_size=None, verbose=NONE):
         self.LINEAR = [torch.nn.Linear, torch.nn.modules.Linear]
         self.CONV2D = [torch.nn.Conv2d, torch.nn.modules.Conv2d]
         self.EMBEDDING = [torch.nn.Embedding, torch.nn.modules.Embedding]
+        self.module_limit_size=module_limit_size
+        self.verbose=verbose
 
     def is_linear(self, attr):
         return type(attr) in self.LINEAR
@@ -84,7 +87,24 @@ class Roastable:
         return type(attr) in self.EMBEDDING
 
     def roastable(self, attr):
-        return self.is_linear(attr) or self.is_conv2d(attr) or self.is_embedding(attr)
+
+        #if the module has been marked as do not roast
+        do_not_roast = False
+        if 'do_not_roast' in dir(attr):
+            do_not_roast = attr.do_not_roast
+
+        # checks
+        sanity_checks = True
+        if self.module_limit_size is not None and isinstance(attr, torch.nn.Module):
+            sanity_checks = sanity_checks and (get_module_params(attr) >= self.module_limit_size)
+            if self.verbose > DEBUG:
+                print("checker", attr, get_module_params(attr), self.module_limit_size)
+
+        # modules
+        module_check = (self.is_linear(attr) 
+                                  or self.is_conv2d(attr) 
+                                  or self.is_embedding(attr))
+        return (not do_not_roast) and sanity_checks and  module_check
 
     def get_parameter(self, attr):
         assert(self.roastable(attr))
@@ -93,9 +113,9 @@ class Roastable:
         return idc, c
         
 class ModelRoastableParameters(ModelParser, Roastable):
-    def __init__(self, model):
+    def __init__(self, model, module_limit_size=None, verbose=NONE):
         ModelParser.__init__(self)
-        Roastable.__init__(self)
+        Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
         self.model = model
 
     def lambda_func(self, state_dict):
@@ -133,9 +153,9 @@ class ModelRoastableParameters(ModelParser, Roastable):
 
 class ModelRoaster(ModelParser, Roastable):
 
-    def __init__(self, model, roast_global, sparsity, verbose=NONE):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE):
         ModelParser.__init__(self)
-        Roastable.__init__(self)
+        Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
       
         self.verbose = verbose
 
@@ -144,9 +164,10 @@ class ModelRoaster(ModelParser, Roastable):
         self.is_global = roast_global
         self.compression = sparsity
 
-        parameter_finder = ModelRoastableParameters(model)
+        parameter_finder = ModelRoastableParameters(model, module_limit_size=module_limit_size)
         pf = parameter_finder.process()
         roastable_params, total_params = pf['roastable'], pf['all']
+
         if self.verbose >= INFO:
             print("Roastable params: {}/{}".format(roastable_params, total_params))
 
@@ -157,7 +178,12 @@ class ModelRoaster(ModelParser, Roastable):
         else:
             self.roast_array = None
 
+        self.original_total_params = total_params
+        self.original_roastable_params = roastable_params
+
     def make_roast_module(self, target_attr, seed):
+        if not self.roastable(target_attr):
+              return None
         new_attr = None
         if self.is_linear(target_attr):
             new_attr = FakeRoastLinear(target_attr.in_features, 
