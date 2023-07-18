@@ -9,8 +9,10 @@
 
 '''
 import torch
-from .FakeRoast import *
-#from FakeRoast import *
+try:
+    from .FakeRoast import *
+except:
+    from FakeRoast import *
 
 # general functions
 NONE=0
@@ -150,16 +152,15 @@ class ModelRoastableParameters(ModelParser, Roastable):
         return state_dict
 
 
-
 class ModelRoaster(ModelParser, Roastable):
 
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04):
         ModelParser.__init__(self)
         Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
       
         self.verbose = verbose
 
-        self.ROAST_INIT = 0.04
+        self.ROAST_INIT = init_std
         self.model = model
         self.is_global = roast_global
         self.compression = sparsity
@@ -248,5 +249,63 @@ class ModelRoaster(ModelParser, Roastable):
     def process(self):
         state_dict = {'init_seed' : 1}
         self.run("model", self.model, state_dict)
+        if self.is_global:
+            self.model.roast_array = self.roast_array
+        else:
+            self.model.roast_array = None
         return self.model
    
+
+class ModelRoasterGradScaler(ModelRoaster):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04):
+        super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std)
+        assert(roast_global) # this should be defined only for roast_global
+        self.count = torch.zeros_like(self.roast_array)
+        self.aggregate_scale = torch.zeros_like(self.roast_array)
+
+
+    def lambda_func(self, state_dict):
+        attr = state_dict['target_attr']
+        name = state_dict['name']
+        state_dict['seed'] = state_dict['seed'] + 1
+        new_attr = self.make_roast_module(attr, state_dict['seed'])
+        if self.verbose >= DEBUG:
+            print(type(attr), new_attr, flush=True)
+        if new_attr is not None:
+            setattr(state_dict['model'], name, new_attr)
+            weight = new_attr.WHelper()
+            _, count = new_attr.WHelper.wt_orig_to_comp(weight)
+            self.count += count
+            # note that this is sum of scale factors without sign G
+            self.aggregate_scale += count * new_attr.scale 
+        return state_dict
+
+    def compute_roast_grad_scale(self):
+      return torch.square(self.aggregate_scale) / (1e-3 + self.count)
+      #return self.aggregate_scale
+
+    '''
+    def compute_roast_grad_scale(self):
+      #return torch.square(self.aggregate_scale) / (1e-3 + self.count)
+      return (self.aggregate_scale) / (1e-3 + self.count)
+      #return self.aggregate_scale
+    '''  
+    def process(self):
+        super().process()
+        self.roast_array._roast_grad_scaler = self.compute_roast_grad_scale()
+        return self.model
+
+
+class RoastGradScaler:
+    def __init__(self):
+        pass
+
+    def scale_step(self, model):
+        if not('roast_array' in dir(model)):
+            return
+
+        for p in model.parameters():
+            if (p.requires_grad) and (p.grad is not None) and '_roast_grad_scaler' in dir(p):
+                p._roast_grad_scaler = p._roast_grad_scaler.to(p.device)
+                p.grad = p.grad / (1e-6+p._roast_grad_scaler)
+

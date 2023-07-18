@@ -1,8 +1,9 @@
 import torchvision
 from FakeRoastUtil_v2 import *
+import pdb
 
 
-def test(sparsity=0.5):
+def test1(sparsity=0.5):
     model = torchvision.models.AlexNet()
     print(model)
     bef = get_module_params(model)
@@ -19,7 +20,7 @@ def test(sparsity=0.5):
     print(int(roastable * sparsity), (af-fixed))
     assert(abs( int(roastable * sparsity) - (af - fixed)) < 5)
 
-def test_1(sparsity=0.5):
+def test2(sparsity=0.5):
     model = torchvision.models.AlexNet()
     import pdb
     pdb.set_trace()
@@ -37,4 +38,21 @@ def test_1(sparsity=0.5):
     af = get_module_params(model)
     print(int(roastable * sparsity), (af-fixed))
     assert(abs( int(roastable * sparsity) - (af - fixed)) < 5)
-test_1()
+
+
+def test3(sparsity=0.5):
+    model = torchvision.models.AlexNet()
+    print(model)
+    bef = get_module_params(model)
+    pf = ModelRoastableParameters(model)
+    s = pf.process()
+    roastable = s['roastable']
+    total = s['all']
+    fixed = total - roastable
+    
+    roaster = ModelRoasterGradScaler(model, True, sparsity, verbose=NONE)
+    model = roaster.process()
+    print(model)
+
+
+test3()
