@@ -257,9 +257,10 @@ class ModelRoaster(ModelParser, Roastable):
    
 
 class ModelRoasterGradScaler(ModelRoaster):
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v1"):
         super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std)
         assert(roast_global) # this should be defined only for roast_global
+        self.scaler_mode = scaler_mode
         self.count = torch.zeros_like(self.roast_array)
         self.aggregate_scale = torch.zeros_like(self.roast_array)
 
@@ -280,9 +281,23 @@ class ModelRoasterGradScaler(ModelRoaster):
             self.aggregate_scale += count * new_attr.scale 
         return state_dict
 
-    def compute_roast_grad_scale(self):
+    def compute_roast_grad_scale_v1(self):
       return torch.square(self.aggregate_scale) / (1e-3 + self.count)
-      #return self.aggregate_scale
+
+    def compute_roast_grad_scale_v2(self):
+      return self.aggregate_scale
+
+    def compute_roast_grad_scale_v3(self):
+      return (self.aggregate_scale) / (1e-3 + self.count)
+
+    def compute_roast_grad_scale(self):
+      if self.scaler_mode == "v1":
+          return self.compute_roast_grad_scale_v1()
+      if self.scaler_mode == "v2":
+          return self.compute_roast_grad_scale_v2()
+      if self.scaler_mode == "v3":
+          return self.compute_roast_grad_scale_v3()
+      raise NotImplementedError
 
     '''
     def compute_roast_grad_scale(self):
