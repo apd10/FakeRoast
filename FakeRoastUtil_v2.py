@@ -175,7 +175,8 @@ class ModelRoaster(ModelParser, Roastable):
         if self.is_global:
             ''' need to compute the max params: sparsity is applied to roastable parameters '''
             max_params = int(sparsity * roastable_params)
-            self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).uniform_(-self.ROAST_INIT, self.ROAST_INIT))
+            #self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).uniform_(-self.ROAST_INIT, self.ROAST_INIT))
+            self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).normal_(std=self.ROAST_INIT))
         else:
             self.roast_array = None
 
@@ -196,7 +197,8 @@ class ModelRoaster(ModelParser, Roastable):
                             self.compression,
                             False,
                             "random",
-                            seed)
+                            seed,
+                            req_scale = torch.std(target_attr.weight).item())
         if self.is_conv2d(target_attr):
             new_attr = FakeRoastConv2d( target_attr.in_channels,
                             target_attr.out_channels,
@@ -213,7 +215,8 @@ class ModelRoaster(ModelParser, Roastable):
                             target_attr.padding_mode,
                             False,
                             "random",
-                            seed)
+                            seed,
+                            req_scale = torch.std(target_attr.weight).item())
         if self.is_embedding(target_attr):
             new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
                             target_attr.embedding_dim,
@@ -221,7 +224,8 @@ class ModelRoaster(ModelParser, Roastable):
                             self.compression, target_attr.padding_idx, 
                             target_attr.max_norm, target_attr.norm_type,
                             target_attr.scale_grad_by_freq, 
-                            target_attr.sparse) # missing seed?
+                            target_attr.sparse,
+                            req_scale = torch.std(target_attr.weight).item()) # missing seed?
     
         return new_attr
 

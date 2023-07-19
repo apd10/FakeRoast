@@ -117,7 +117,7 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test=False, matrix_mode="random", seed=1024):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test=False, matrix_mode="random", seed=1024, req_scale=None):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
@@ -132,7 +132,11 @@ class FakeRoastLinear(nn.Module):
             init_scale = 1/sqrt(self.idim)
         self.WHelper = FakeRoast(
             self.W_shape, is_global, weight, init_scale, compression, test, matrix_mode, seed)
-        self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
+
+        if req_scale is None:
+            self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
+        else:
+            self.scale = req_scale / self.WHelper.init_scale
         self.bias = None
         if bias:
             self.bias = nn.Parameter(torch.zeros(
@@ -166,7 +170,8 @@ class FakeRoastConv2d(nn.Module):
                     padding_mode='zeros',
                     test=False,
                     matrix_mode="random",
-                    seed = 2023):
+                    seed = 2023,
+                    req_scale = None):
         super(FakeRoastConv2d, self).__init__()
 
         if type(kernel_size) == int:
@@ -195,7 +200,10 @@ class FakeRoastConv2d(nn.Module):
             init_scale = sqrt(k) 
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test, matrix_mode=matrix_mode, seed=seed)
         
-        self.scale = sqrt(k) / self.WHelper.init_scale
+        if req_scale is None:
+            self.scale = sqrt(k) / self.WHelper.init_scale
+        else:
+            self.scale = req_scale / self.WHelper.init_scale
         self.bias = None
         if self.is_bias:
             self.bias = nn.Parameter(torch.zeros(out_channels))
@@ -224,7 +232,8 @@ class FakeRoastEmbedding(nn.Module):
                  max_norm=None,
                  norm_type=2.0,
                  scale_grad_by_freq=False,
-                 sparse=False):
+                 sparse=False,
+                 req_scale = None):
         super(FakeRoastEmbedding, self).__init__()
         W_shape = (num_embeddings, embedding_dim)
         if is_global == False:
@@ -235,7 +244,10 @@ class FakeRoastEmbedding(nn.Module):
         self.compression = compression
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.scale = sqrt(1. / num_embeddings) / self.WHelper.init_scale
+        if req_scale is None:
+            self.scale = sqrt(1. / num_embeddings) / self.WHelper.init_scale
+        else: 
+            self.scale = req_scale / self.WHelper.init_scale
         self.padding_idx = padding_idx
         self.max_norm = max_norm
         self.norm_type = norm_type
