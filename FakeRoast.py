@@ -4,6 +4,10 @@ import numpy as np
 from math import sqrt
 import pdb
 import mmh3
+try:
+    from .Mapper_v2 import *
+except:
+    from Mapper_v2 import *
 
 #N = 100000000 # your wsize should be less than this 
 N  = 536870912 # your wsize should be less than this 
@@ -33,8 +37,9 @@ class FakeRoast(nn.Module):
                  init_scale=None,
                  compression=None,
                  test=False,
-                 matrix_mode="random",
-                 seed=2023):
+                 matrix_mode="random",# use mapper for using mappers
+                 seed=2023,
+                 mapper_args=None):
         super(FakeRoast, self).__init__()
         self.is_global = is_global
         self.seed = seed
@@ -65,16 +70,23 @@ class FakeRoast(nn.Module):
                 np.prod(W_shape)).reshape(W_shape), requires_grad=False)
             assert (self.wsize >= np.prod(W_shape))
         else:
-            if matrix_mode == "random":
+            if matrix_mode == "mapper":
+                assert(mapper_args is not None)
+                mapper = MapperFactory.get(**mapper_args)
+                idx = mapper.get_idx(w_shape=W_shape, target_size=self.wsize, **mapper_args)
+                self.IDX = nn.Parameter(idx, requires_grad=False)
+            elif matrix_mode == "random":
                 # making it consistent for power of 2 compression
                 assert(N > self.wsize)
                 self.IDX = nn.Parameter(torch.randint(0, N, size=W_shape, dtype=torch.int64, generator=gen) % self.wsize, requires_grad=False)
             elif matrix_mode == "circ_random": 
+                assert(False) # use the mapper
                 assert(not is_global) # fix the idx circ for global if needed
                 self.IDX = idx_circ(W_shape, N, seed) % self.wsize
             else:
                 raise NotImplementedError
         self.G = nn.Parameter(torch.randint(0, 2, size=W_shape, dtype=torch.float, generator=gen)*2 - 1, requires_grad=False)
+        #print(mapper_args)
         #print(self.IDX.view(-1)[0:5])
         #print(self.G.view(-1)[0:5])
 
@@ -117,7 +129,7 @@ class FakeRoast(nn.Module):
 
 
 class FakeRoastLinear(nn.Module):
-    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test=False, matrix_mode="random", seed=1024, req_scale=None):
+    def __init__(self, input, output, bias, is_global, weight, init_scale, compression, test=False, matrix_mode="random", seed=1024, req_scale=None, mapper_args=None):
         super(FakeRoastLinear, self).__init__()
         self.W_shape = (output, input)
         self.idim = input
@@ -130,8 +142,14 @@ class FakeRoastLinear(nn.Module):
 
         if is_global == False:
             init_scale = 1/sqrt(self.idim)
+
+        if mapper_args is not None:
+            mapper_args["mode"] = "mlp"
+
         self.WHelper = FakeRoast(
-            self.W_shape, is_global, weight, init_scale, compression, test, matrix_mode, seed)
+                        self.W_shape, is_global, weight, init_scale, compression, test,
+                        matrix_mode=matrix_mode,
+                        seed=seed, mapper_args=mapper_args)
 
         if req_scale is None:
             self.scale = (1/sqrt(self.idim)) / self.WHelper.init_scale
@@ -171,7 +189,8 @@ class FakeRoastConv2d(nn.Module):
                     test=False,
                     matrix_mode="random",
                     seed = 2023,
-                    req_scale = None):
+                    req_scale = None,
+                    mapper_args = None):
         super(FakeRoastConv2d, self).__init__()
 
         if type(kernel_size) == int:
@@ -198,7 +217,12 @@ class FakeRoastConv2d(nn.Module):
         k = 1.0 * groups / (in_channels * np.prod(kernel_size))
         if is_global == False:
             init_scale = sqrt(k) 
-        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test, matrix_mode=matrix_mode, seed=seed)
+
+        if mapper_args is not None:
+            mapper_args["mode"] = "general"
+        self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test,
+                        matrix_mode=matrix_mode,
+                        seed=seed, mapper_args=mapper_args)
         
         if req_scale is None:
             self.scale = sqrt(k) / self.WHelper.init_scale
@@ -233,13 +257,19 @@ class FakeRoastEmbedding(nn.Module):
                  norm_type=2.0,
                  scale_grad_by_freq=False,
                  sparse=False,
-                 req_scale = None):
+                 req_scale = None,
+                 mapper_args = None):
         super(FakeRoastEmbedding, self).__init__()
         W_shape = (num_embeddings, embedding_dim)
         if is_global == False:
             init_scale = sqrt(1. / num_embeddings)
+        if mapper_args is not None:
+            mapper_args["mode"] = "embedding"
+
         self.WHelper = FakeRoast(
-            W_shape, is_global, weight, init_scale, compression)
+                        W_shape, is_global, weight, init_scale, compression, 
+                        matrix_mode=matrix_mode,
+                        mapper_args=mapper_args)
         torch.nn.init.normal_(self.WHelper.weight)
         self.compression = compression
         self.num_embeddings = num_embeddings

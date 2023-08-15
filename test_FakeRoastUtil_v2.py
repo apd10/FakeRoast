@@ -55,4 +55,11 @@ def test3(sparsity=0.5):
     print(model)
 
 
-test3()
+def test_mapper(sparsity=0.5):
+    model = torchvision.models.AlexNet()
+    mapper_args = { "mapper":"pareto", "hasher" : "uhash", "block_k" : 16, "block_n" : 16, "block": 8, "seed" : 1011 }
+    roaster = ModelRoasterGradScaler(model, True, sparsity, verbose=NONE, mapper_args=mapper_args)
+    model = roaster.process()
+    print(model)
+
+test_mapper()

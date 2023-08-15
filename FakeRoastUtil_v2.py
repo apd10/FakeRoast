@@ -9,6 +9,7 @@
 
 '''
 import torch
+import copy
 try:
     from .FakeRoast import *
 except:
@@ -154,7 +155,7 @@ class ModelRoastableParameters(ModelParser, Roastable):
 
 class ModelRoaster(ModelParser, Roastable):
 
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, mapper_args=None):
         ModelParser.__init__(self)
         Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
       
@@ -182,11 +183,20 @@ class ModelRoaster(ModelParser, Roastable):
 
         self.original_total_params = total_params
         self.original_roastable_params = roastable_params
+        self.global_offset = 0
+        self.mapper_args = mapper_args
 
     def make_roast_module(self, target_attr, seed):
         if not self.roastable(target_attr):
               return None
         new_attr = None
+
+        if self.mapper_args is not None:
+            mapper_args = copy.deepcopy(self.mapper_args)
+            mapper_args["original_offset"] = self.global_offset
+        else:
+            mapper_args = None
+
         if self.is_linear(target_attr):
             new_attr = FakeRoastLinear(target_attr.in_features, 
                             target_attr.out_features,
@@ -196,9 +206,12 @@ class ModelRoaster(ModelParser, Roastable):
                             self.ROAST_INIT,
                             self.compression,
                             False,
-                            "random",
+                            "mapper" if (mapper_args is not None) else "random",
                             seed,
-                            req_scale = torch.std(target_attr.weight).item())
+                            req_scale = torch.std(target_attr.weight).item(),
+                            mapper_args = mapper_args)
+            self.global_offset = self.global_offset + target_attr.weight.numel()
+
         if self.is_conv2d(target_attr):
             new_attr = FakeRoastConv2d( target_attr.in_channels,
                             target_attr.out_channels,
@@ -214,9 +227,11 @@ class ModelRoaster(ModelParser, Roastable):
                             target_attr.bias is not None,
                             target_attr.padding_mode,
                             False,
-                            "random",
+                            "mapper" if (mapper_args is not None) else "random",
                             seed,
-                            req_scale = torch.std(target_attr.weight).item())
+                            req_scale = torch.std(target_attr.weight).item(),
+                            mapper_args = mapper_args)
+            self.global_offset = self.global_offset + target_attr.weight.numel()
         if self.is_embedding(target_attr):
             new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
                             target_attr.embedding_dim,
@@ -225,7 +240,10 @@ class ModelRoaster(ModelParser, Roastable):
                             target_attr.max_norm, target_attr.norm_type,
                             target_attr.scale_grad_by_freq, 
                             target_attr.sparse,
-                            req_scale = torch.std(target_attr.weight).item()) # missing seed?
+                            matrix_mode= "mapper" if (mapper_args is not None) else "random",
+                            req_scale = torch.std(target_attr.weight).item(),
+                            mapper_args = mapper_args) # missing seed?
+            self.global_offset = self.global_offset + target_attr.weight.numel()
     
         return new_attr
 
@@ -261,8 +279,9 @@ class ModelRoaster(ModelParser, Roastable):
    
 
 class ModelRoasterGradScaler(ModelRoaster):
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v1"):
-        super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std)
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v1", mapper_args=None):
+        super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std,
+                                                     mapper_args=mapper_args)
         assert(roast_global) # this should be defined only for roast_global
         self.scaler_mode = scaler_mode
         self.count = torch.zeros_like(self.roast_array)
