@@ -270,7 +270,7 @@ class FakeRoastEmbedding(nn.Module):
                         W_shape, is_global, weight, init_scale, compression, 
                         matrix_mode=matrix_mode,
                         mapper_args=mapper_args)
-        torch.nn.init.normal_(self.WHelper.weight)
+        #torch.nn.init.normal_(self.WHelper.weight) # WTH
         self.compression = compression
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
