@@ -313,6 +313,9 @@ class ModelRoasterGradScaler(ModelRoaster):
     def compute_roast_grad_scale_v3(self):
       return (self.aggregate_scale) / (1e-3 + self.count)
 
+    def compute_roast_grad_scale_none(self):
+      return torch.ones_like(self.aggregate_scale)
+
     def compute_roast_grad_scale(self):
       if self.scaler_mode == "v1":
           return self.compute_roast_grad_scale_v1()
@@ -320,6 +323,8 @@ class ModelRoasterGradScaler(ModelRoaster):
           return self.compute_roast_grad_scale_v2()
       if self.scaler_mode == "v3":
           return self.compute_roast_grad_scale_v3()
+      if self.scaler_mode == "none":
+          return self.compute_roast_grad_scale_none()
       raise NotImplementedError
 
     '''
