@@ -209,6 +209,7 @@ class FakeRoastConv2d(nn.Module):
         self.test = test
         self.matrix_mode = matrix_mode
         self.seed = seed
+        self.padding_mode = padding_mode
         
 
         W_shape = (out_channels, int(in_channels/groups),

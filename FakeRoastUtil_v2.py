@@ -75,10 +75,17 @@ class ModelPrinter(ModelParser):
 class Roastable:
     def __init__(self, module_limit_size=None, verbose=NONE):
         self.LINEAR = [torch.nn.Linear, torch.nn.modules.Linear]
+        self.FAKELINEAR = [FakeRoastLinear]
+        self.FAKECONV2D = [FakeRoastConv2d]
+        self.FAKEEMBEDDING = [FakeRoastEmbedding]
         self.CONV2D = [torch.nn.Conv2d, torch.nn.modules.Conv2d]
         self.EMBEDDING = [torch.nn.Embedding, torch.nn.modules.Embedding]
         self.module_limit_size=module_limit_size
         self.verbose=verbose
+
+
+    def is_fakeroasted(self, attr):
+        return type(attr) in (self.FAKELINEAR + self.FAKECONV2D + self.FAKEEMBEDDING)
 
     def is_linear(self, attr):
         return type(attr) in self.LINEAR
@@ -88,6 +95,15 @@ class Roastable:
 
     def is_embedding(self, attr):
         return type(attr) in self.EMBEDDING
+
+    def is_roast_linear(self, attr):
+        return type(attr) in self.FAKELINEAR
+
+    def is_roast_conv2d(self, attr):
+        return type(attr) in self.FAKECONV2D
+
+    def is_roast_embedding(self, attr):
+        return type(attr) in self.FAKEEMBEDDING
 
     def roastable(self, attr):
 
@@ -352,3 +368,67 @@ class RoastGradScaler:
                 p._roast_grad_scaler = p._roast_grad_scaler.to(p.device)
                 p.grad = p.grad / (1e-6+p._roast_grad_scaler)
 
+
+
+class RoastToFullModel(ModelParser, Roastable):
+    def __init__(self, roast_model):
+          ModelParser.__init__(self)
+          Roastable.__init__(self)
+          self.model = roast_model
+
+    def change_to_full_module(self, target_attr):
+        if not self.is_fakeroasted(target_attr):
+            return None
+        if self.is_roast_linear(target_attr):
+            new_attr = nn.Linear(target_attr.idim, 
+                            target_attr.odim,
+                            target_attr.bias is not None)
+            new_attr.weight.data[:,:] = target_attr.WHelper()
+            if target_attr.bias is not None:
+                new_attr.bias.data[:] = target_attr.bias
+
+        if self.is_roast_conv2d(target_attr):
+            new_attr = nn.Conv2d(target_attr.in_channels,
+                    target_attr.out_channels,
+                    target_attr.kernel_size,
+                    stride=target_attr.stride,
+                    padding=target_attr.padding,
+                    dilation=target_attr.dilation,
+                    groups=target_attr.groups, 
+                    bias=target_attr.bias is not None,
+                    padding_mode=target_attr.padding_mode)
+    
+            new_attr.weight.data[:,:,:,:] = target_attr.WHelper()
+            if target_attr.bias is not None:
+                new_attr.bias.data[:] = target_attr.bias
+
+
+        if self.is_roast_embedding(target_attr):
+            new_attr = nn.Embedding(target_attr.num_embeddings, 
+                            target_attr.embedding_dim,
+                            max_norm = target_attr.max_norm,
+                            norm_type = target_attr.norm_type,
+                            scale_grad_by_freq = target_attr.scale_grad_by_freq, 
+                            sparse = target_attr.sparse) # missing seed?
+            
+            new_attr.weight.data[:,:] = target_attr.WHelper()
+
+        return new_attr
+
+
+    def lambda_func(self, state_dict):
+        attr = state_dict['target_attr']
+        name = state_dict['name']
+        new_attr = self.change_to_full_module(attr)
+        if self.verbose >= DEBUG:
+            print(type(attr), new_attr, flush=True)
+        if new_attr is not None:
+            setattr(state_dict['model'], name, new_attr)
+        return state_dict
+
+    def process(self):
+        state_dict = {}
+        self.run("model", self.model, state_dict)
+        if 'roast_array' in dir(self.model):
+            del self.model.roast_array 
+        return self.model

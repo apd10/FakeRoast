@@ -126,8 +126,8 @@ class HashedNetMapper(Mapper):
       global_locations = torch.arange(total_num) + original_offset
       idx = (self.hasher.hash1(global_locations, target_size)) % target_size
       idx = idx.reshape(*w_shape)
-      print("HashedNetMapper get_general_idx")
-      print(idx[:5,:5])
+      #print("HashedNetMapper get_general_idx")
+      #print(idx[:5,:5])
       return idx
         
 
@@ -144,8 +144,8 @@ class ParetoCyclicMapper(Mapper):
       offsets = global_locations - target_size * chunk_num
       idx = (self.hasher.hash1(chunk_num, target_size) + offsets) % target_size
       idx = idx.reshape(*w_shape)
-      print("ParetoCyclicMapper get_general_idx")
-      print(idx[:5,:5])
+      #print("ParetoCyclicMapper get_general_idx")
+      #print(idx[:5,:5])
       return idx
 
 class RoastMapper(Mapper):
@@ -164,8 +164,8 @@ class RoastMapper(Mapper):
                           (w_shape[0] + block_k) // block_k, (w_shape[1] + block_n) // block_n
                         )[:w_shape[0], :w_shape[1]]
       idx = chunk_locations + offset
-      print("RoastMapper get_mlp_idx")
-      print(idx[:5,:5])
+      #print("RoastMapper get_mlp_idx")
+      #print(idx[:5,:5])
       return idx
 
 
@@ -181,8 +181,8 @@ class RoastMapper(Mapper):
                         )[:w_shape[0], :w_shape[1]]
       idx = chunk_locations + offset
 
-      print("RoastMapper get_embedding_idx")
-      print(idx[:5,:5])
+      #print("RoastMapper get_embedding_idx")
+      #print(idx[:5,:5])
       return idx
 
 
@@ -208,8 +208,8 @@ class RoastMemOptMapper(RoastMapper):
 
       offset = torch.cat(rows, axis=0)[:w_shape[0], :w_shape[1]]
       idx = chunk_locations + offset
-      print("RoastMemOptMapper get_mlp_idx")
-      print(idx[:5,:5])
+      #print("RoastMemOptMapper get_mlp_idx")
+      #print(idx[:5,:5])
       return idx
 
 
@@ -236,8 +236,8 @@ class RoastCompOptMapper(RoastMapper):
 
       offset = torch.cat(rows, axis=0)[:w_shape[0], :w_shape[1]]
       idx = chunk_locations + offset
-      print("RoastCompOptMapper get_mlp_idx")
-      print(idx[:5,:5])
+      #print("RoastCompOptMapper get_mlp_idx")
+      #print(idx[:5,:5])
       return idx
 
 

@@ -62,4 +62,27 @@ def test_mapper(sparsity=0.5):
     model = roaster.process()
     print(model)
 
-test_mapper()
+
+def test_change(sparsity=0.5):
+    model = torchvision.models.AlexNet()
+    mapper_args = { "mapper":"pareto", "hasher" : "uhash", "block_k" : 16, "block_n" : 16, "block": 8, "seed" : 1011 }
+    roaster = ModelRoasterGradScaler(model, True, sparsity, verbose=NONE, mapper_args=mapper_args)
+    model = roaster.process()
+    model.features[6].bias.data[:] = 1
+    model.classifier[1].bias.data[:] = 1
+
+    backup = copy.deepcopy(model)
+    hyderator = RoastToFullModel(model)
+    full_model = hyderator.process()
+    print(full_model)
+    backup_dict = dict(backup.named_parameters())
+    backup_modules_dict = dict(backup.named_modules())
+    for n,w in full_model.named_parameters():
+        print( " ===== ", n, "======")
+        print("full", torch.sum(w))
+        if 'weight' in n and  n.replace('weight', 'WHelper.IDX') in backup_dict.keys():
+            print("roast", torch.sum(backup_modules_dict[n.replace('.weight', '')].WHelper()))
+        else:
+            print("roast", torch.sum(backup_dict[n]))
+
+test_change()
