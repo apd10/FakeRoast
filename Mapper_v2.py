@@ -89,8 +89,8 @@ class Mapper:
       global_locations = torch.arange(total_num) + original_offset
       g = 2*(self.hasher.hash1(global_locations, 2)) - 1
       g = g.reshape(*w_shape)
-      print("Mapper get_general_idx")
-      print(idx[:5,:5])
+      #print("Mapper get_general_idx")
+      #print(idx[:5,:5])
       return g
 
     
