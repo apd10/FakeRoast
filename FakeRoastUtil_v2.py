@@ -383,7 +383,7 @@ class RoastToFullModel(ModelParser, Roastable):
             new_attr = nn.Linear(target_attr.idim, 
                             target_attr.odim,
                             target_attr.bias is not None)
-            new_attr.weight.data[:,:] = target_attr.WHelper()
+            new_attr.weight.data[:,:] = target_attr.WHelper() * target_attr.scale
             if target_attr.bias is not None:
                 new_attr.bias.data[:] = target_attr.bias
 
@@ -398,7 +398,7 @@ class RoastToFullModel(ModelParser, Roastable):
                     bias=target_attr.bias is not None,
                     padding_mode=target_attr.padding_mode)
     
-            new_attr.weight.data[:,:,:,:] = target_attr.WHelper()
+            new_attr.weight.data[:,:,:,:] = target_attr.WHelper() * target_attr.scale
             if target_attr.bias is not None:
                 new_attr.bias.data[:] = target_attr.bias
 
@@ -411,7 +411,7 @@ class RoastToFullModel(ModelParser, Roastable):
                             scale_grad_by_freq = target_attr.scale_grad_by_freq, 
                             sparse = target_attr.sparse) # missing seed?
             
-            new_attr.weight.data[:,:] = target_attr.WHelper()
+            new_attr.weight.data[:,:] = target_attr.WHelper() * target_attr.scale
 
         return new_attr
 
