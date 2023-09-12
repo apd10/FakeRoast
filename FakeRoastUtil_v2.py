@@ -302,6 +302,7 @@ class ModelRoasterGradScaler(ModelRoaster):
         self.scaler_mode = scaler_mode
         self.count = torch.zeros_like(self.roast_array)
         self.aggregate_scale = torch.zeros_like(self.roast_array)
+        self.aggregate2_scale = torch.zeros_like(self.roast_array)
 
 
     def lambda_func(self, state_dict):
@@ -318,6 +319,7 @@ class ModelRoasterGradScaler(ModelRoaster):
             self.count += count
             # note that this is sum of scale factors without sign G
             self.aggregate_scale += count * new_attr.scale 
+            self.aggregate2_scale += count * new_attr.scale**2
         return state_dict
 
     def compute_roast_grad_scale_v1(self):
@@ -329,6 +331,9 @@ class ModelRoasterGradScaler(ModelRoaster):
     def compute_roast_grad_scale_v3(self):
       return (self.aggregate_scale) / (1e-3 + self.count)
 
+    def compute_roast_grad_scale_v4(self):
+      return torch.sqrt(self.aggregate2_scale)
+
     def compute_roast_grad_scale_none(self):
       return torch.ones_like(self.aggregate_scale)
 
@@ -339,6 +344,8 @@ class ModelRoasterGradScaler(ModelRoaster):
           return self.compute_roast_grad_scale_v2()
       if self.scaler_mode == "v3":
           return self.compute_roast_grad_scale_v3()
+      if self.scaler_mode == "v4":
+          return self.compute_roast_grad_scale_v4()
       if self.scaler_mode == "none":
           return self.compute_roast_grad_scale_none()
       raise NotImplementedError
