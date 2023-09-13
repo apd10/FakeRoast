@@ -40,6 +40,7 @@ class UHasher(Hasher):
         self.P = P
         self.gen = torch.Generator()
         self.gen.manual_seed(self.seed)
+        print("Hashing using seed", seed)
 
         self.random_numbers = torch.randint(low=1, high=int(self.P/2) - 1, size=(4,), generator=self.gen)
         self.random_numbers = 2*self.random_numbers + 1
