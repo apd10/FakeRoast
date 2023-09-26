@@ -334,6 +334,9 @@ class ModelRoasterGradScaler(ModelRoaster):
     def compute_roast_grad_scale_v4(self):
       return torch.sqrt(self.aggregate2_scale)
 
+    def compute_roast_grad_scale_v5(self):
+      return self.aggregate2_scale
+
     def compute_roast_grad_scale_none(self):
       return torch.ones_like(self.aggregate_scale)
 
@@ -345,6 +348,8 @@ class ModelRoasterGradScaler(ModelRoaster):
       if self.scaler_mode == "v3":
           return self.compute_roast_grad_scale_v3()
       if self.scaler_mode == "v4":
+          return self.compute_roast_grad_scale_v4()
+      if self.scaler_mode == "v5":
           return self.compute_roast_grad_scale_v4()
       if self.scaler_mode == "none":
           return self.compute_roast_grad_scale_none()
