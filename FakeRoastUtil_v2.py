@@ -171,7 +171,7 @@ class ModelRoastableParameters(ModelParser, Roastable):
 
 class ModelRoaster(ModelParser, Roastable):
 
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, mapper_args=None):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, mapper_args=None, partial = False, init_seed = 1):
         ModelParser.__init__(self)
         Roastable.__init__(self, module_limit_size=module_limit_size, verbose=verbose)
       
@@ -181,6 +181,10 @@ class ModelRoaster(ModelParser, Roastable):
         self.model = model
         self.is_global = roast_global
         self.compression = sparsity
+        self.partial = partial
+        self.init_seed = init_seed
+        self.layers = []
+        self.offsets = [0]
 
         parameter_finder = ModelRoastableParameters(model, module_limit_size=module_limit_size)
         pf = parameter_finder.process()
@@ -194,6 +198,8 @@ class ModelRoaster(ModelParser, Roastable):
             max_params = int(sparsity * roastable_params)
             #self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).uniform_(-self.ROAST_INIT, self.ROAST_INIT))
             self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).normal_(std=self.ROAST_INIT))
+            if self.partial:
+                self.roast_array = torch.nn.Parameter(torch.zeros(max_params))
         else:
             self.roast_array = None
 
@@ -225,8 +231,13 @@ class ModelRoaster(ModelParser, Roastable):
                             "mapper" if (mapper_args is not None) else "random",
                             seed,
                             req_scale = torch.std(target_attr.weight).item(),
-                            mapper_args = mapper_args)
+                            mapper_args = mapper_args,
+                            partial = self.partial,
+                            original_weight = target_attr.weight if self.partial else None,
+                            original_bias = target_attr.bias if self.partial else None)
             self.global_offset = self.global_offset + target_attr.weight.numel()
+            self.layers.append(new_attr)
+            self.offsets.append(self.global_offset)
 
         if self.is_conv2d(target_attr):
             new_attr = FakeRoastConv2d( target_attr.in_channels,
@@ -246,8 +257,13 @@ class ModelRoaster(ModelParser, Roastable):
                             "mapper" if (mapper_args is not None) else "random",
                             seed,
                             req_scale = torch.std(target_attr.weight).item(),
-                            mapper_args = mapper_args)
+                            mapper_args = mapper_args,
+                            partial = self.partial,
+                            original_weight = target_attr.weight if self.partial else None,
+                            original_bias = target_attr.bias if self.partial else None)
             self.global_offset = self.global_offset + target_attr.weight.numel()
+            self.layers.append(new_attr)
+            self.offsets.append(self.global_offset)
         if self.is_embedding(target_attr):
             new_attr = FakeRoastEmbedding(target_attr.num_embeddings, 
                             target_attr.embedding_dim,
@@ -258,8 +274,10 @@ class ModelRoaster(ModelParser, Roastable):
                             target_attr.sparse,
                             matrix_mode= "mapper" if (mapper_args is not None) else "random",
                             req_scale = torch.std(target_attr.weight).item(),
-                            mapper_args = mapper_args) # missing seed?
+                            mapper_args = mapper_args) # missing seed? # TODO original weights pass
             self.global_offset = self.global_offset + target_attr.weight.numel()
+            self.layers.append(new_attr)
+            self.offsets.append(self.global_offset)
     
         return new_attr
 
@@ -285,7 +303,7 @@ class ModelRoaster(ModelParser, Roastable):
         return state_dict
 
     def process(self):
-        state_dict = {'init_seed' : 1}
+        state_dict = {'init_seed' : self.init_seed}
         self.run("model", self.model, state_dict)
         if self.is_global:
             self.model.roast_array = self.roast_array
@@ -367,19 +385,86 @@ class ModelRoasterGradScaler(ModelRoaster):
         return self.model
 
 
-class RoastGradScaler:
-    def __init__(self):
-        pass
 
-    def scale_step(self, model):
-        if not('roast_array' in dir(model)):
-            return
 
-        for p in model.parameters():
-            if (p.requires_grad) and (p.grad is not None) and '_roast_grad_scaler' in dir(p):
-                p._roast_grad_scaler = p._roast_grad_scaler.to(p.device)
-                p.grad = p.grad / (1e-6+p._roast_grad_scaler)
+class ModelRoasterGradScalerPartial(ModelRoaster):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v5", mapper_args=None, partial = "pending", init_seed = 1):
+        super(ModelRoasterGradScalerPartial, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std,
+                                                     mapper_args=mapper_args, partial=partial, init_seed=init_seed)
+        assert(roast_global) # this should be defined only for roast_global
+        self.scaler_mode = scaler_mode
+        self.count = torch.zeros_like(self.roast_array)
+        self.aggregate2_scale = torch.zeros_like(self.roast_array)
+        self.partial = partial
+        self.boundary = -1
 
+    def compute_roast_grad_scale_v5(self):
+      return self.aggregate2_scale
+
+    def compute_roast_grad_scale_none(self):
+      return torch.ones_like(self.aggregate2_scale)
+
+    def compute_roast_grad_scale(self):
+      if self.scaler_mode == "v5":
+          return self.compute_roast_grad_scale_v4()
+      if self.scaler_mode == "none":
+          return self.compute_roast_grad_scale_none()
+      raise NotImplementedError
+
+    '''
+    def compute_roast_grad_scale(self):
+      #return torch.square(self.aggregate_scale) / (1e-3 + self.count)
+      return (self.aggregate_scale) / (1e-3 + self.count)
+      #return self.aggregate_scale
+    '''  
+    def process(self):
+        super().process()
+        self.roast_array._roast_grad_scaler = self.compute_roast_grad_scale()
+        return self.model
+    
+    def update_boundary(self, step):
+        start_step = self.boundary+1
+        end_step = self.boundary+step
+
+        if self.boundary >= self.original_roastable_params-1:
+            raise Exception(f"{step} number of params not available to roast. {self.original_roastable_params - self.boundary - 1} params left")
+        elif self.boundary + step >= self.original_roastable_params:
+            end_step = self.original_roastable_params-1
+            
+        i=-1
+        j=-1
+        for threshold in self.offsets:
+            if start_step>=threshold:
+                i += 1
+            if end_step >= threshold:
+                j += 1
+
+        for p in range(i, j+1):
+            layerOffset = self.offsets[p]
+            original_weights = self.layers[p].original_weight.data.flatten().cuda()
+            roast_weights = self.layers[p].WHelper.weight.data.cuda()
+            layer_scale = self.layers[p].scale
+            layer_G = self.layers[p].WHelper.G.flatten().cuda()
+            layer_index = torch.tensor(range(start_step-layerOffset, min(end_step + 1 - layerOffset, self.offsets[p+1]-layerOffset))).cuda()
+            roast_index = self.layers[p].WHelper.IDX.flatten()[layer_index].cuda()
+
+            roast_weights = roast_weights*self.count + torch.zeros_like(roast_weights).scatter_add_(0, roast_index, layer_G[layer_index]*original_weights[layer_index]/layer_scale)
+            self.count.scatter_add_(0, roast_index, torch.ones_like(roast_index, dtype=torch.float32))
+            self.aggregate2_scale.scatter_add_(0, roast_index, layer_scale**2 * torch.ones_like(roast_index, dtype=torch.float32))
+            self.layers[p].WHelper.weight.data = (roast_weights/self.count).nan_to_num(0)
+            print("number of collisions: ", len(self.count[self.count > 1]))
+
+            if end_step + 1 < self.offsets[p+1]:
+                self.layers[p].mode = "roasting"
+                self.layers[p].offset = end_step - self.offsets[p]
+            else:
+                self.layers[p].mode = "roasted"
+                self.layers[p].original_weight = None
+
+            start_step = self.offsets[p+1]
+        self.boundary = end_step
+        # update scale
+        self.roast_array._roast_grad_scaler = self.compute_roast_grad_scale()
 
 
 class RoastToFullModel(ModelParser, Roastable):
@@ -444,3 +529,18 @@ class RoastToFullModel(ModelParser, Roastable):
         if 'roast_array' in dir(self.model):
             del self.model.roast_array 
         return self.model
+
+
+class RoastGradScaler:
+    def __init__(self):
+        pass
+
+    def scale_step(self, model):
+        if not('roast_array' in dir(model)):
+            return
+
+        for p in model.parameters(): 
+            if (p.requires_grad) and (p.grad is not None) and '_roast_grad_scaler' in dir(p):
+                p._roast_grad_scaler = p._roast_grad_scaler.to(p.device)
+                # p.grad = p.grad / (1e-6+p._roast_grad_scaler)
+                p.grad = p.grad / (p._roast_grad_scaler)
