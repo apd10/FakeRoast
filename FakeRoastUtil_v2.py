@@ -388,16 +388,17 @@ class ModelRoasterGradScaler(ModelRoaster):
 
 
 class ModelRoasterGradScalerPartial(ModelRoaster):
-    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v5", mapper_args=None, partial = "pending", init_seed = 1):
+    def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v5", mapper_args=None, partial = "pending", init_seed = 1, distill_epochs=120, distill_step=1000):
         super(ModelRoasterGradScalerPartial, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std,
                                                      mapper_args=mapper_args, partial=partial, init_seed=init_seed)
         assert(roast_global) # this should be defined only for roast_global
         self.scaler_mode = scaler_mode
-        self.count = torch.zeros_like(self.roast_array)
-        self.aggregate2_scale = torch.zeros_like(self.roast_array)
+        self.count = torch.zeros_like(self.roast_array).cuda()
+        self.aggregate2_scale = torch.zeros_like(self.roast_array).cuda()
         self.partial = partial
         self.boundary = -1
-
+        self.distill_epochs = distill_epochs
+        self.distill_step = distill_step
     def compute_roast_grad_scale_v5(self):
       return self.aggregate2_scale
 
@@ -406,7 +407,7 @@ class ModelRoasterGradScalerPartial(ModelRoaster):
 
     def compute_roast_grad_scale(self):
       if self.scaler_mode == "v5":
-          return self.compute_roast_grad_scale_v4()
+          return self.compute_roast_grad_scale_v5()
       if self.scaler_mode == "none":
           return self.compute_roast_grad_scale_none()
       raise NotImplementedError
@@ -422,7 +423,23 @@ class ModelRoasterGradScalerPartial(ModelRoaster):
         self.roast_array._roast_grad_scaler = self.compute_roast_grad_scale()
         return self.model
     
-    def update_boundary(self, step):
+    def update_boundary(self, epoch, itr, epoch_itr):
+        total_iterations = self.distill_epochs * epoch_itr
+        spent = epoch*epoch_itr + itr + 1
+        target = min(self.original_roastable_params, int(self.original_roastable_params * spent / total_iterations))
+
+        #print(epoch, itr, "/", epoch_itr, "--", spent, "/", total_iterations, "--", target)
+        if target > (self.boundary) + 1:
+            step = target - self.boundary
+        else:
+            return 
+        
+        if target < self.original_roastable_params and step < self.distill_step:
+              return
+     
+        #if self.verbose >= DEBUG:
+        print(epoch, itr, "/", epoch_itr, "distilling, step = ", step, "(", target, "/", self.boundary, self.original_roastable_params, ")")
+
         start_step = self.boundary+1
         end_step = self.boundary+step
 
@@ -449,10 +466,13 @@ class ModelRoasterGradScalerPartial(ModelRoaster):
             roast_index = self.layers[p].WHelper.IDX.flatten()[layer_index].cuda()
 
             roast_weights = roast_weights*self.count + torch.zeros_like(roast_weights).scatter_add_(0, roast_index, layer_G[layer_index]*original_weights[layer_index]/layer_scale)
-            self.count.scatter_add_(0, roast_index, torch.ones_like(roast_index, dtype=torch.float32))
-            self.aggregate2_scale.scatter_add_(0, roast_index, layer_scale**2 * torch.ones_like(roast_index, dtype=torch.float32))
-            self.layers[p].WHelper.weight.data = (roast_weights/self.count).nan_to_num(0)
-            print("number of collisions: ", len(self.count[self.count > 1]))
+            self.count = self.count.scatter_add_(0, roast_index, torch.ones_like(roast_index, dtype=torch.float32))
+            self.aggregate2_scale = self.aggregate2_scale.scatter_add_(0, roast_index, layer_scale**2 * torch.ones_like(roast_index, dtype=torch.float32))
+            self.layers[p].WHelper.weight.data = roast_weights/(1e-6 + self.count)
+
+            if self.verbose >= DEBUG:
+                print("number of collisions: ", len(self.count[self.count > 1]))
+                print("number of large entries: ", len(self.layers[p].WHelper.weight.data[torch.abs(self.layers[p].WHelper.weight.data) > 1e3]))
 
             if end_step + 1 < self.offsets[p+1]:
                 self.layers[p].mode = "roasting"
@@ -542,5 +562,4 @@ class RoastGradScaler:
         for p in model.parameters(): 
             if (p.requires_grad) and (p.grad is not None) and '_roast_grad_scaler' in dir(p):
                 p._roast_grad_scaler = p._roast_grad_scaler.to(p.device)
-                # p.grad = p.grad / (1e-6+p._roast_grad_scaler)
-                p.grad = p.grad / (p._roast_grad_scaler)
+                p.grad = p.grad / (1e-6+p._roast_grad_scaler)
