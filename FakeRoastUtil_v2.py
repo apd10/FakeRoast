@@ -350,7 +350,7 @@ class ModelRoasterGradScaler(ModelRoaster):
       if self.scaler_mode == "v4":
           return self.compute_roast_grad_scale_v4()
       if self.scaler_mode == "v5":
-          return self.compute_roast_grad_scale_v4()
+          return self.compute_roast_grad_scale_v5()
       if self.scaler_mode == "none":
           return self.compute_roast_grad_scale_none()
       raise NotImplementedError
