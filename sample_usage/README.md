@@ -1,5 +1,7 @@
 Only a few lines of code changes is required. 
-`
+
+
+```
 diff roasted.py standard.py
 1,3d0
 < import sys
@@ -26,6 +28,6 @@ diff roasted.py standard.py
 <
 104d86
 <
-`
+```
 
 
