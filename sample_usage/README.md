@@ -1,4 +1,5 @@
-Only a few lines of code changes is required. 
+This sample contains code from huggingface modified to train bert model from scratch on glue dataset.  The "standard.py" has standard code whereas "roasted.py" performs roasting using FakeRoast repository. 
+Only a few lines of code changes is required. you can view vimdiff roasted.py standard.py to see where the changes are. The diff is posted below. 
 
 
 ```
