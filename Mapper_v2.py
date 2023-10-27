@@ -84,6 +84,9 @@ class Mapper:
 
     def get_embedding_idx(self, **kwargs):
         return self.get_general_idx(**kwargs)
+           
+    def get_conv2d_idx(self, **kwargs):
+        return self.get_general_idx(**kwargs)
 
     def get_general_g(self, w_shape, original_offset, target_size, **kwargs):
       total_num = np.prod(w_shape)
@@ -106,6 +109,8 @@ class Mapper:
             return self.get_mlp_idx(**kwargs)
         if mode == "embedding":
             return self.get_embedding_idx(**kwargs)
+        if mode == "conv2d":
+            return self.get_conv2d_idx(**kwargs)
 
         return self.get_general_idx(**kwargs)
 
@@ -185,7 +190,10 @@ class RoastMapper(Mapper):
       #print("RoastMapper get_embedding_idx")
       #print(idx[:5,:5])
       return idx
-
+    def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
+        assert(len(w_shape) == 4)
+        idx = self.get_mlp_idx([w_shape[0], np.prod(w_shape[1:])], original_offset, target_size, block_k, block_n, **kwargs)
+        return idx.view(*w_shape)
 
 
 
@@ -212,6 +220,11 @@ class RoastMemOptMapper(RoastMapper):
       #print("RoastMemOptMapper get_mlp_idx")
       #print(idx[:5,:5])
       return idx
+    
+    def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
+        assert(len(w_shape) == 4)
+        idx = self.get_mlp_idx([w_shape[0], np.prod(w_shape[1:])], original_offset, target_size, block_k, block_n, **kwargs)
+        return idx.view(*w_shape)
 
 
 class RoastCompOptMapper(RoastMapper):
@@ -240,6 +253,11 @@ class RoastCompOptMapper(RoastMapper):
       #print("RoastCompOptMapper get_mlp_idx")
       #print(idx[:5,:5])
       return idx
+    
+    def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, **kwargs):
+        assert(len(w_shape) == 4)
+        idx = self.get_mlp_idx([w_shape[0], np.prod(w_shape[1:])], original_offset, target_size, block_k, block_n, block_k_small, **kwargs)
+        return idx.view(*w_shape)
 
 
 class MapperFactory:
