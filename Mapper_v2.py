@@ -161,6 +161,8 @@ class RoastMapper(Mapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
+
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset +  w_shape[0]
 
@@ -172,7 +174,7 @@ class RoastMapper(Mapper):
       idx = chunk_locations + offset
       #print("RoastMapper get_mlp_idx")
       #print(idx[:5,:5])
-      return idx
+      return np.transpose(idx)
 
 
     def get_embedding_idx(self, w_shape, original_offset, target_size, block, **kwargs):
@@ -203,6 +205,8 @@ class RoastMemOptMapper(RoastMapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
+
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
       row_chunk = torch.zeros(w_shape[0], dtype=torch.int64).reshape(-1,1) + original_offset# same column
       chunk_locations = self.hasher.hash2(row_chunk, col_chunk, target_size - block_k * block_n)
@@ -219,7 +223,7 @@ class RoastMemOptMapper(RoastMapper):
       idx = chunk_locations + offset
       #print("RoastMemOptMapper get_mlp_idx")
       #print(idx[:5,:5])
-      return idx
+      return np.transpose(idx)
     
     def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
         assert(len(w_shape) == 4)
@@ -233,6 +237,7 @@ class RoastCompOptMapper(RoastMapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
@@ -252,7 +257,7 @@ class RoastCompOptMapper(RoastMapper):
       idx = chunk_locations + offset
       #print("RoastCompOptMapper get_mlp_idx")
       #print(idx[:5,:5])
-      return idx
+      return np.transpose(idx)
     
     def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, **kwargs):
         assert(len(w_shape) == 4)
