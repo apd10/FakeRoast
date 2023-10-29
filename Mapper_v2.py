@@ -161,6 +161,7 @@ class RoastMapper(Mapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape = list(w_shape)
       w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
@@ -205,6 +206,7 @@ class RoastMemOptMapper(RoastMapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape = list(w_shape)
       w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
@@ -237,6 +239,7 @@ class RoastCompOptMapper(RoastMapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, **kwargs):
       assert(len(w_shape) == 2)
+      w_shape = list(w_shape)
       w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
