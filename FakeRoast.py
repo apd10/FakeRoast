@@ -72,6 +72,7 @@ class FakeRoast(nn.Module):
         else:
             if matrix_mode == "mapper":
                 assert(mapper_args is not None)
+                mapper_args["seed"] = self.seed
                 mapper = MapperFactory.get(**mapper_args)
                 idx = mapper.get_idx(w_shape=W_shape, target_size=self.wsize, **mapper_args)
                 self.IDX = nn.Parameter(idx, requires_grad=False)
@@ -220,7 +221,7 @@ class FakeRoastConv2d(nn.Module):
             init_scale = sqrt(k) 
 
         if mapper_args is not None:
-            mapper_args["mode"] = "general"
+            mapper_args["mode"] = "conv2d"
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test,
                         matrix_mode=matrix_mode,
                         seed=seed, mapper_args=mapper_args)
