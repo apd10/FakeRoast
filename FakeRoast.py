@@ -145,6 +145,7 @@ class FakeRoastLinear(nn.Module):
 
         if mapper_args is not None:
             mapper_args["mode"] = "mlp"
+            mapper_args['seed'] = seed
 
         self.WHelper = FakeRoast(
                         self.W_shape, is_global, weight, init_scale, compression, test,
@@ -221,6 +222,7 @@ class FakeRoastConv2d(nn.Module):
 
         if mapper_args is not None:
             mapper_args["mode"] = "conv2d"
+            mapper_args['seed'] = seed
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test,
                         matrix_mode=matrix_mode,
                         seed=seed, mapper_args=mapper_args)
@@ -269,6 +271,7 @@ class FakeRoastEmbedding(nn.Module):
             init_scale = sqrt(1. / num_embeddings)
         if mapper_args is not None:
             mapper_args["mode"] = "embedding"
+            mapper_args['seed'] = seed
 
         self.WHelper = FakeRoast(
                         W_shape, is_global, weight, init_scale, compression, 
