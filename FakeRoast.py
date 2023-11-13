@@ -107,12 +107,12 @@ class FakeRoast(nn.Module):
     def grad_orig_to_comp(self, grad):
         out_grad = torch.zeros(
             self.wsize, dtype=torch.float, device=grad.device)
-        out_grad.scatter_add_(0, self.IDX.view(-1),
-                              (torch.mul(grad, self.G)).view(-1))
+        out_grad.scatter_add_(0, self.IDX.reshape(-1),
+                              (torch.mul(grad, self.G)).reshape(-1))
 
         count = torch.zeros(self.wsize, dtype=torch.float, device=grad.device)
-        count.scatter_add_(0, self.IDX.view(-1), torch.ones_like(self.IDX,
-                           device=grad.device, dtype=torch.float).view(-1))
+        count.scatter_add_(0, self.IDX.reshape(-1), torch.ones_like(self.IDX,
+                           device=grad.device, dtype=torch.float).reshape(-1))
         return (out_grad, count)
 
     def wt_comp_to_orig(self, wt):
@@ -120,12 +120,12 @@ class FakeRoast(nn.Module):
 
     def wt_orig_to_comp(self, wt):
         out_wt = torch.zeros(self.wsize, dtype=torch.float, device=wt.device)
-        out_wt.scatter_add_(0, self.IDX.view(-1),
-                            (torch.mul(wt, self.G)).view(-1))
+        out_wt.scatter_add_(0, self.IDX.reshape(-1),
+                            (torch.mul(wt, self.G)).reshape(-1))
 
         count = torch.zeros(self.wsize, dtype=torch.float, device=wt.device)
-        count.scatter_add_(0, self.IDX.view(-1), torch.ones_like(self.IDX,
-                           device=wt.device, dtype=torch.float).view(-1)) + 1e-3
+        count.scatter_add_(0, self.IDX.reshape(-1), torch.ones_like(self.IDX,
+                           device=wt.device, dtype=torch.float).reshape(-1)) + 1e-3
         return (out_wt, count)
 
 

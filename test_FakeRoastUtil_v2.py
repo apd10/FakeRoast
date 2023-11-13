@@ -1,6 +1,7 @@
 import torchvision
 from FakeRoastUtil_v2 import *
 import pdb
+import matplotlib.pyplot as plt
 
 
 def test1(sparsity=0.5):
@@ -57,15 +58,20 @@ def test3(sparsity=0.5):
 
 def test_mapper(sparsity=0.5):
     model = torchvision.models.AlexNet()
-    mapper_args = { "mapper":"pareto", "hasher" : "uhash", "block_k" : 16, "block_n" : 16, "block": 8, "seed" : 1011 }
+    mapper_args = { "mapper":"roast_comp", "hasher" : "uhash", "block_k" : 5, "block_n" : 5, "block": 5, "seed" : 1011, "block_k_small": 2}
     roaster = ModelRoasterGradScaler(model, True, sparsity, verbose=NONE, mapper_args=mapper_args)
+    roaster.roast_array.data[:] = torch.arange(roaster.roast_array.numel())
     model = roaster.process()
     print(model)
+    print("classifier.6", model.classifier[6].WHelper().shape)
+    plt.imshow(torch.abs(model.classifier[6].WHelper()).long()[:50,:50], cmap='hot', interpolation='nearest')
+    print(torch.abs(model.classifier[6].WHelper()).long()[:50,:50])
+    plt.show()
 
 
 def test_change(sparsity=0.5):
     model = torchvision.models.AlexNet()
-    mapper_args = { "mapper":"pareto", "hasher" : "uhash", "block_k" : 16, "block_n" : 16, "block": 8, "seed" : 1011 }
+    mapper_args = { "mapper":"pareto", "hasher" : "uhash", "block_k" : 32, "block_n" : 32, "block": 32, "seed" : 1011, "block_k_small": 8 }
     roaster = ModelRoasterGradScaler(model, True, sparsity, verbose=NONE, mapper_args=mapper_args)
     model = roaster.process()
     model.features[6].bias.data[:] = 1
@@ -85,4 +91,4 @@ def test_change(sparsity=0.5):
         else:
             print("roast", torch.sum(backup_dict[n]))
 
-test_change()
+test_mapper()

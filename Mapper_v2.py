@@ -81,14 +81,12 @@ class Mapper:
       return idx
 
     def get_mlp_idx(self, **kwargs):
-        print("yoooo", kwargs)
         return self.get_general_idx(**kwargs)
 
     def get_embedding_idx(self, **kwargs):
         return self.get_general_idx(**kwargs)
            
     def get_conv2d_idx(self, **kwargs):
-        print("yoooo", kwargs)
         return self.get_general_idx(**kwargs)
 
     def get_general_g(self, w_shape, original_offset, target_size, **kwargs):
@@ -165,7 +163,8 @@ class RoastMapper(Mapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
-      w_shape = (w_shape[1], w_shape[0])
+      w_shape = list(w_shape)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset +  w_shape[0]
@@ -178,7 +177,7 @@ class RoastMapper(Mapper):
       idx = chunk_locations + offset
       #print("RoastMapper get_mlp_idx")
       #print(idx[:5,:5])
-      return idx.T.contiguous()
+      return np.transpose(idx)
 
 
     def get_embedding_idx(self, w_shape, original_offset, target_size, block, **kwargs):
@@ -197,10 +196,9 @@ class RoastMapper(Mapper):
       #print(idx[:5,:5])
       return idx
     def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
-        print("here roast")
         assert(len(w_shape) == 4)
-        idx = self.get_mlp_idx((w_shape[0], np.prod(w_shape[1:])), original_offset, target_size, block_k, block_n, **kwargs)
-        return idx.reshape(*w_shape)
+        idx = self.get_mlp_idx([w_shape[0], np.prod(w_shape[1:])], original_offset, target_size, block_k, block_n, **kwargs)
+        return idx.view(*w_shape)
 
 
 
@@ -210,7 +208,8 @@ class RoastMemOptMapper(RoastMapper):
     
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
       assert(len(w_shape) == 2)
-      w_shape = (w_shape[1], w_shape[0])
+      w_shape = list(w_shape)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
       row_chunk = torch.zeros(w_shape[0], dtype=torch.int64).reshape(-1,1) + original_offset# same column
@@ -228,13 +227,12 @@ class RoastMemOptMapper(RoastMapper):
       idx = chunk_locations + offset
       #print("RoastMemOptMapper get_mlp_idx")
       #print(idx[:5,:5])
-      return idx.T.contiguous()
+      return np.transpose(idx)
     
     def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, **kwargs):
-        print("here mem")
         assert(len(w_shape) == 4)
-        idx = self.get_mlp_idx((w_shape[0], np.prod(w_shape[1:])), original_offset, target_size, block_k, block_n, **kwargs)
-        return idx.reshape(*w_shape)
+        idx = self.get_mlp_idx([w_shape[0], np.prod(w_shape[1:])], original_offset, target_size, block_k, block_n, **kwargs)
+        return idx.view(*w_shape)
 
 
 class RoastCompOptMapper(RoastMapper):
@@ -244,7 +242,8 @@ class RoastCompOptMapper(RoastMapper):
     def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, comp_reduction_rate, block_k_small, **kwargs):
       print("k_small is:", block_k_small)
       assert(len(w_shape) == 2)
-      w_shape = (w_shape[1], w_shape[0])
+      w_shape = list(w_shape)
+      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
 
       row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
       col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
