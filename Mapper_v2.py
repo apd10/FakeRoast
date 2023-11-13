@@ -44,7 +44,6 @@ class UHasher(Hasher):
 
         self.random_numbers = torch.randint(low=1, high=int(self.P/2) - 1, size=(4,), generator=self.gen)
         self.random_numbers = 2*self.random_numbers + 1
-        print(self.random_numbers)
         
 
     def hash1(self, numbers, target_size=None):
@@ -107,7 +106,6 @@ class Mapper:
 
     def get_idx(self, mode, **kwargs):
         if mode == "mlp":
-            print("yoooo", kwargs)
             return self.get_mlp_idx(**kwargs)
         if mode == "embedding":
             return self.get_embedding_idx(**kwargs)
@@ -144,8 +142,21 @@ class ParetoCyclicMapper(Mapper):
     def __init__(self, hasher, **kwargs):
       super(ParetoCyclicMapper, self).__init__()
       self.hasher = HasherFactory.get(hasher, **kwargs)
+
+    def get_general_idx(self, w_shape, original_offset, target_size, comp_reduction_rate=0, **kwargs):
+      
+      input_dimension = np.prod(w_shape[1:])
+      reduced_input_dimension = int(np.ceil(input_dimension - comp_reduction_rate * input_dimension))
+      reduced_idx = self.get_base_idx((w_shape[0], reduced_input_dimension), original_offset, target_size)
+      index_array = torch.randperm(reduced_input_dimension).repeat(((input_dimension + reduced_input_dimension) // reduced_input_dimension))[torch.randperm(input_dimension)]        
+
+      reduced_idx_2D = reduced_idx.reshape(*(w_shape[0], reduced_input_dimension))
+      idx = reduced_idx_2D.T[index_array]
+
+      idx = idx.reshape(*w_shape)
+      return idx
     
-    def get_general_idx(self, w_shape, original_offset, target_size, **kwargs):
+    def get_base_idx(self, w_shape, original_offset, target_size, **kwargs):
       total_num = np.prod(w_shape)
       global_locations = torch.arange(total_num) + original_offset
       chunk_num = global_locations // target_size
@@ -238,33 +249,8 @@ class RoastMemOptMapper(RoastMapper):
 class RoastCompOptMapper(RoastMapper):
     def __init__(self, hasher, **kwargs):
       super(RoastCompOptMapper, self).__init__(hasher, **kwargs)
-    
-    def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, comp_reduction_rate, block_k_small, **kwargs):
-      assert(len(w_shape) == 2)
-      w_shape = list(w_shape)
-      w_shape[0], w_shape[1] = w_shape[1], w_shape[0]
-
-      row_chunk = torch.arange(w_shape[0]).reshape(-1,1) // block_k + original_offset
-      col_chunk = torch.arange(w_shape[1]).reshape(1,-1) // block_n + original_offset + w_shape[0]
-
-      chunk_locations = self.hasher.hash2(row_chunk, col_chunk, target_size - block_k * block_n)
-      # every chunk_row will have permutations
-      rows = []
-      for i in range((w_shape[0] + block_k) // block_k):
-          column = []
-          for j in range((w_shape[1] + block_n) // block_n):
-              index_array = torch.arange(block_k_small).repeat(((block_k + block_k_small) // block_k_small))[torch.randperm(block_k)]
-              block = torch.randperm(block_k_small*block_n).reshape(block_k_small, block_n)[index_array]
-              column.append(block)
-          rows.append(torch.cat(column, axis=1))
-
-      offset = torch.cat(rows, axis=0)[:w_shape[0], :w_shape[1]]
-      idx = chunk_locations + offset
-      #print("RoastCompOptMapper get_mlp_idx")
-      #print(idx[:5,:5])
-      return np.transpose(idx)
-    
-    def get_mlp_idx_random(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, comp_reduction_rate, **kwargs):
+        
+    def get_mlp_idx(self, w_shape, original_offset, target_size, block_k, block_n, comp_reduction_rate=0, **kwargs):
         
         assert(len(w_shape) == 2)
         k_small = int(np.ceil(w_shape[1] - comp_reduction_rate * w_shape[1]))
@@ -275,9 +261,9 @@ class RoastCompOptMapper(RoastMapper):
     
         return np.transpose(idx)
     
-    def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, block_k_small, comp_reduction_rate, **kwargs):
+    def get_conv2d_idx(self, w_shape, original_offset, target_size, block_k, block_n, comp_reduction_rate=0, **kwargs):
         assert(len(w_shape) == 4)
-        idx = self.get_mlp_idx_random((w_shape[0], np.prod(w_shape[1:])), original_offset, target_size, block_k, block_n, block_k_small, comp_reduction_rate, **kwargs)
+        idx = self.get_mlp_idx((w_shape[0], np.prod(w_shape[1:])), original_offset, target_size, block_k, block_n, comp_reduction_rate, **kwargs)
         return idx.view(*w_shape)
     
 

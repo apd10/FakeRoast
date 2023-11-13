@@ -72,7 +72,6 @@ class FakeRoast(nn.Module):
         else:
             if matrix_mode == "mapper":
                 assert(mapper_args is not None)
-                mapper_args["seed"] = self.seed
                 mapper = MapperFactory.get(**mapper_args)
                 idx = mapper.get_idx(w_shape=W_shape, target_size=self.wsize, **mapper_args)
                 self.IDX = nn.Parameter(idx, requires_grad=False)
