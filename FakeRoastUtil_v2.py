@@ -123,7 +123,6 @@ class Roastable:
         module_check = (self.is_linear(attr) 
                                   or self.is_conv2d(attr) 
                                   or self.is_embedding(attr))
-        print(sanity_checks, module_check)
         return (not do_not_roast) and sanity_checks and  module_check
 
     def get_parameter(self, attr):
@@ -140,7 +139,6 @@ class ModelRoastableParameters(ModelParser, Roastable):
 
     def lambda_func(self, state_dict):
         attr = state_dict['target_attr']
-        print("target attr", attr)
         if isinstance(attr, torch.nn.Parameter):
             if attr.requires_grad:
                 state_dict['all'][id(attr)] = attr.numel()
@@ -212,7 +210,7 @@ class ModelRoaster(ModelParser, Roastable):
         if self.mapper_args is not None:
             mapper_args = copy.deepcopy(self.mapper_args)
             mapper_args["original_offset"] = self.global_offset
-            mapper_args["seed"] = self.seed
+            mapper_args["seed"] = seed
         else:
             mapper_args = None
 
