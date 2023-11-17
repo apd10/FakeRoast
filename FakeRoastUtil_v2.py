@@ -286,6 +286,8 @@ class ModelRoaster(ModelParser, Roastable):
 
     def process(self):
         state_dict = {'init_seed' : 1}
+        if self.mapper_args is not None:
+              state_dict['init_seed'] = self.mapper_args['seed']
         self.run("model", self.model, state_dict)
         if self.is_global:
             self.model.roast_array = self.roast_array
