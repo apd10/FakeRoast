@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import pdb
 import mmh3 
+import math
 
 ''' hasher classes that can be used in actual kernels '''
 class Hasher:
@@ -143,17 +144,25 @@ class ParetoCyclicMapper(Mapper):
       super(ParetoCyclicMapper, self).__init__()
       self.hasher = HasherFactory.get(hasher, **kwargs)
 
-    def get_general_idx(self, w_shape, original_offset, target_size, comp_reduction_rate=0, **kwargs):
-      
+    def get_general_idx(self, w_shape, original_offset, target_size, block_n, comp_reduction_rate=0, **kwargs):
       input_dimension = np.prod(w_shape[1:])
       reduced_input_dimension = int(np.ceil(input_dimension - comp_reduction_rate * input_dimension))
+      print("computations from: ", input_dimension, " reduced to: ", reduced_input_dimension, " with reduction rate: ", comp_reduction_rate)
       reduced_idx = self.get_base_idx((w_shape[0], reduced_input_dimension), original_offset, target_size)
-      index_array = torch.randperm(reduced_input_dimension).repeat(((input_dimension + reduced_input_dimension) // reduced_input_dimension))[torch.randperm(input_dimension)]        
-
       reduced_idx_2D = reduced_idx.reshape(*(w_shape[0], reduced_input_dimension))
-      idx = reduced_idx_2D.T[index_array]
 
-      idx = idx.reshape(*w_shape)
+      idx = torch.tensor([]).to(torch.int)
+
+      print("dims: ", w_shape, int(math.ceil(reduced_idx_2D.shape[0] / block_n)), block_n)
+      for out_block in range (int(math.ceil(reduced_idx_2D.shape[0] / block_n))):  
+
+        index_array = torch.randperm(reduced_input_dimension).repeat(((input_dimension + reduced_input_dimension) // reduced_input_dimension))[torch.randperm(input_dimension)]        
+        
+        out_block_idx = reduced_idx_2D.T[:, out_block*block_n:(out_block+1)*block_n][index_array]
+        
+        idx = torch.cat((idx, out_block_idx), dim=1)
+
+      idx = idx.T.reshape(*w_shape)
       return idx
     
     def get_base_idx(self, w_shape, original_offset, target_size, **kwargs):

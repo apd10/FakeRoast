@@ -130,6 +130,12 @@ class Roastable:
         idc = id(attr.weight)
         c = attr.weight.numel()
         return idc, c
+    
+    def get_in_channel_dim(self, attr):
+        assert(self.roastable(attr))
+        idc = id(attr.weight)
+        c = np.prod(attr.weight.shape[1:])
+        return idc, c
         
 class ModelRoastableParameters(ModelParser, Roastable):
     def __init__(self, model, module_limit_size=None, verbose=NONE):
@@ -147,12 +153,14 @@ class ModelRoastableParameters(ModelParser, Roastable):
             is_roastable = self.roastable(attr)
             if is_roastable:
                   idc, c = self.get_parameter(attr)
+                  idin, ins = self.get_in_channel_dim(attr)
                   state_dict['compressable'][idc] = c
+                  state_dict['reducible'][idin] = ins
 
         return state_dict
 
     def process(self):
-        state_dict = {"compressable" : {}, "all" : {}}
+        state_dict = {"compressable" : {}, "all" : {}, "reducible" : {}}
         self.run("model", self.model, state_dict)
         
         total = 0
@@ -186,6 +194,16 @@ class ModelRoaster(ModelParser, Roastable):
         pf = parameter_finder.process()
         roastable_params, total_params = pf['roastable'], pf['all']
 
+        if mapper_args is not None:
+
+            self.global_flop_reduction = 1 - mapper_args['comp_reduction_rate']
+            self.total_flop_reducible = sum(pf['reducible'].values())
+            self.reduction_factor = self.global_flop_reduction * (self.total_flop_reducible / len(pf['reducible']))
+            self.adjust_layer_flop_reduction(pf['reducible'])
+
+            
+
+
         if self.verbose >= INFO:
             print("Roastable params: {}/{}".format(roastable_params, total_params))
 
@@ -211,6 +229,8 @@ class ModelRoaster(ModelParser, Roastable):
             mapper_args = copy.deepcopy(self.mapper_args)
             mapper_args["original_offset"] = self.global_offset
             mapper_args["seed"] = seed
+            self.layer_flop_reduction = self.layers_flop_reduction[id(target_attr.weight)]
+            mapper_args["comp_reduction_rate"] = 1 - self.layer_flop_reduction 
         else:
             mapper_args = None
 
@@ -263,6 +283,27 @@ class ModelRoaster(ModelParser, Roastable):
             self.global_offset = self.global_offset + target_attr.weight.numel()
     
         return new_attr
+    
+    
+    def adjust_layer_flop_reduction(self, reducibles):
+
+        self.layers_flop_reduction = {}
+        
+        for layer_id, layer_reducible in reducibles.items():
+            self.layer_flop_reduction = self.reduction_factor / layer_reducible
+            self.layers_flop_reduction[layer_id] = self.layer_flop_reduction 
+        
+        while not all(0 <= value <= 1 for value in self.layers_flop_reduction.values()):
+            residue_sum = 0
+            for layer_id, layer_flop_reduction in self.layers_flop_reduction.items():
+                if layer_flop_reduction > 1:
+                    residue_sum += (layer_flop_reduction - 1) * reducibles[layer_id]
+                    self.layers_flop_reduction[layer_id] = 1
+            compensation_factor = residue_sum / sum([reducibles[item] for item, value in self.layers_flop_reduction.items() if value < 1])
+            for layer_id, layer_flop_reduction in self.layers_flop_reduction.items():
+                if layer_flop_reduction < 1:
+                    self.layers_flop_reduction[layer_id] += compensation_factor 
+                            
 
     def lambda_init(self, state_dict):
         state_dict['seed'] = state_dict['init_seed'] * 1024
