@@ -210,8 +210,8 @@ class ModelRoaster(ModelParser, Roastable):
         if self.is_global:
             ''' need to compute the max params: sparsity is applied to roastable parameters '''
             max_params = int(sparsity * roastable_params)
-            #self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).uniform_(-self.ROAST_INIT, self.ROAST_INIT))
-            self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).normal_(std=self.ROAST_INIT))
+            self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).uniform_(-self.ROAST_INIT, self.ROAST_INIT))
+            #self.roast_array = torch.nn.Parameter(torch.FloatTensor(max_params).normal_(std=self.ROAST_INIT))
         else:
             self.roast_array = None
 
@@ -279,7 +279,8 @@ class ModelRoaster(ModelParser, Roastable):
                             target_attr.sparse,
                             matrix_mode= "mapper" if (mapper_args is not None) else "random",
                             req_scale = torch.std(target_attr.weight).item(),
-                            mapper_args = mapper_args) # missing seed?
+                            mapper_args = mapper_args,
+                            seed = seed)
             self.global_offset = self.global_offset + target_attr.weight.numel()
     
         return new_attr
@@ -328,6 +329,8 @@ class ModelRoaster(ModelParser, Roastable):
 
     def process(self):
         state_dict = {'init_seed' : 1}
+        if self.mapper_args is not None:
+              state_dict['init_seed'] = self.mapper_args['seed']
         self.run("model", self.model, state_dict)
         if self.is_global:
             self.model.roast_array = self.roast_array
@@ -338,7 +341,7 @@ class ModelRoaster(ModelParser, Roastable):
 
 class ModelRoasterGradScaler(ModelRoaster):
     def __init__(self, model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=0.04, scaler_mode="v1", mapper_args=None):
-        super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=None, verbose=NONE, init_std=init_std,
+        super(ModelRoasterGradScaler, self).__init__(model, roast_global, sparsity, module_limit_size=module_limit_size, verbose=NONE, init_std=init_std,
                                                      mapper_args=mapper_args)
         assert(roast_global) # this should be defined only for roast_global
         self.scaler_mode = scaler_mode

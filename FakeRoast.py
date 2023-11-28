@@ -145,6 +145,7 @@ class FakeRoastLinear(nn.Module):
 
         if mapper_args is not None:
             mapper_args["mode"] = "mlp"
+            mapper_args['seed'] = seed
 
         self.WHelper = FakeRoast(
                         self.W_shape, is_global, weight, init_scale, compression, test,
@@ -221,6 +222,7 @@ class FakeRoastConv2d(nn.Module):
 
         if mapper_args is not None:
             mapper_args["mode"] = "conv2d"
+            mapper_args['seed'] = seed
         self.WHelper = FakeRoast(W_shape, is_global, weight, init_scale, compression, test=test,
                         matrix_mode=matrix_mode,
                         seed=seed, mapper_args=mapper_args)
@@ -263,31 +265,33 @@ class FakeRoastEmbedding(nn.Module):
                  matrix_mode="random",
                  seed = 2023):
         super(FakeRoastEmbedding, self).__init__()
+        self.compression = compression
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.padding_idx = padding_idx
+        self.max_norm = max_norm
+        self.norm_type = norm_type
+        self.scale_grad_by_freq = scale_grad_by_freq
+        self.sparse = sparse
         self.matrix_mode = matrix_mode
+        self.is_global = is_global
+        self.init_scale = init_scale
         W_shape = (num_embeddings, embedding_dim)
         if is_global == False:
             init_scale = sqrt(1. / num_embeddings)
         if mapper_args is not None:
             mapper_args["mode"] = "embedding"
+            mapper_args['seed'] = seed
 
         self.WHelper = FakeRoast(
                         W_shape, is_global, weight, init_scale, compression, 
                         matrix_mode=matrix_mode,
                         mapper_args=mapper_args,
                         seed=seed)
-        #torch.nn.init.normal_(self.WHelper.weight) # WTH
-        self.compression = compression
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
         if req_scale is None:
             self.scale = sqrt(1. / num_embeddings) / self.WHelper.init_scale
         else: 
             self.scale = req_scale / self.WHelper.init_scale
-        self.padding_idx = padding_idx
-        self.max_norm = max_norm
-        self.norm_type = norm_type
-        self.scale_grad_by_freq = scale_grad_by_freq
-        self.sparse = sparse
 
     def forward(self, x):
         #W = self.WHelper() * self.scale
@@ -295,7 +299,7 @@ class FakeRoastEmbedding(nn.Module):
         W = self.WHelper.forward_partial(x) * self.scale
         return W
     def __repr__(self):
-            return "FakeRoastEmbedding(num_embeddings={}, embedding_dim={}, compression={}, seed={}, matrix_mode={}, global={})".format(self.num_embeddings, self.embedding_dim, self.compression, self.WHelper.seed, self.matrix_mode, self.is_global)
+            return "FakeRoastEmbedding(num_embeddings={}, embedding_dim={}, compression={}, seed={}, matrix_mode={}, global={}, scale={})".format(self.num_embeddings, self.embedding_dim, self.compression, self.WHelper.seed, self.matrix_mode, self.is_global, self.scale)
 
 class FakeRoastLSTM(nn.Module):
     def __init__(self,
